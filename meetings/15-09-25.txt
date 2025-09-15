@@ -1,0 +1,10 @@
+Attendees:
+Everyone
+
+Discussed what datasets we need to use to build a ML model that can predict wildfires
+
+Created the Github
+Make a Linear workspace for project management
+Researched existing wildfire models and government prediction models
+General logistics
+Assigned tasks in Linear
