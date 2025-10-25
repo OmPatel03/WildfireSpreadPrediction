@@ -1,6 +1,9 @@
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.dirname(__file__).split("/src")[-2]))
+# sys.path.append(os.path.abspath(os.path.dirname(__file__).split("/src")[-2]))
+sys.path.append(os.path.abspath(os.path.dirname(__file__).rsplit("/src",1)[-2])) # split on last occurrence instead
+# if this file is in some path where a directory `src` exists ahead of it in the subpath, then it will not modify path correctly
+
 
 from src.dataloader.FireSpreadDataset import FireSpreadDataset
 import argparse
