@@ -3,11 +3,14 @@ name: wispr
 services:
   hdf5convert:
     container_name: ${COMPOSE_PROJECT_NAME:-wispr}-hdf5convert
-    build:
-      dockerfile: preprocess.Containerfile
-      args:
-        - SOURCE_DIR=/data/raw
-        - TARGET_DIR=/data/hdf5
+    image: ghcr.io/kl819/wispr-hdf5-convert
+    command: python src/preprocess/CreateHDF5Dataset.py --data_dir /data/raw --target_dir /data/hdf5
+    # if building locally: 
+    # build:                                                    
+    #   dockerfile: preprocess.Containerfile                    
+    #   args:                                                   
+    #     - SOURCE_DIR=/data/raw                                
+    #     - TARGET_DIR=/data/hdf5
     volumes:
       - ${RAW_SOURCE_DIR_HOST:-../../../../data/raw}:/data/raw:Z,ro
       - ${HDF5_TARGET_DIR_HOST:-../../../../data/hdf5}:/data/hdf5:Z,rw
