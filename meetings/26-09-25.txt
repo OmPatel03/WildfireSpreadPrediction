@@ -1,0 +1,12 @@
+Attendees:
+Everyone
+
+Discussed what the final deliverable may look like (frontend, functionality)
+
+How the frontend will work, how it will be useful for people using the model
+
+What the model will predict, the output of the model
+
+Features of the dateset
+
+Setting up a shared environment to play with the data
