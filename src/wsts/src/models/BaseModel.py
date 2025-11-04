@@ -23,7 +23,7 @@ class BaseModel(pl.LightningModule, ABC):
         n_channels: int,
         flatten_temporal_dimension: bool,
         pos_class_weight: float,
-        loss_function: Literal["BCE", "Focal", "Lovasz", "Jaccard", "Dice"],
+        loss_function: str,
         use_doy: bool = False,
         required_img_size: Optional[Tuple[int, int]] = None,
         *args: Any,

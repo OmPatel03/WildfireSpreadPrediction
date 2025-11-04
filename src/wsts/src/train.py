@@ -16,6 +16,8 @@ torch.set_float32_matmul_precision('high')
 
 class MyLightningCLI(LightningCLI):
     def add_arguments_to_parser(self, parser):
+        parser.fail_untyped = False
+
         parser.link_arguments("trainer.default_root_dir",
                               "trainer.logger.init_args.save_dir")
         parser.link_arguments("model.class_path",
@@ -30,7 +32,7 @@ class MyLightningCLI(LightningCLI):
                             default=False, help="If True: compute val metrics.")
         parser.add_argument("--ckpt_path", type=str, default=None,
                             help="Path to checkpoint to load for resuming training, for testing and predicting.")
-
+                            
     def before_instantiate_classes(self):
         # The number of features is only known inside the data module, but we need that info to instantiate the model.
         # Since datamodule and model are instantiated at the same time with LightningCLI, we need to set the number of features here.

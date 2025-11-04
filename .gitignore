@@ -2,3 +2,5 @@
 __pycache__
 .venv
 venv
+/src/wsts/wispr
+src/wsts/lightning_logs

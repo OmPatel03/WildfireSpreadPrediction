@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 import segmentation_models_pytorch as smp
 
@@ -14,6 +14,7 @@ class SMPModel(BaseModel):
         n_channels: int,
         flatten_temporal_dimension: bool,
         pos_class_weight: float,
+        loss_function: str,
         *args: Any,
         **kwargs: Any
     ):
@@ -21,6 +22,7 @@ class SMPModel(BaseModel):
             n_channels=n_channels,
             flatten_temporal_dimension=flatten_temporal_dimension,
             pos_class_weight=pos_class_weight,
+            loss_function=loss_function,
             *args,
             **kwargs
         )
