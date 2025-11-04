@@ -1,3 +1,21 @@
+import argparse
+
+# --- Patch argparse for Python 3.12 + LightningCLI compatibility ---
+# Force _parse_known_args to always accept 'intermixed' keyword even if older call sites omit it
+if "intermixed" in argparse.ArgumentParser._parse_known_args.__code__.co_varnames:
+    # Already has the new signature (Python 3.12) — wrap for backward compatibility
+    _orig_parse_known_args = argparse.ArgumentParser._parse_known_args
+
+    def _parse_known_args_fixed(self, arg_strings, namespace, *args, **kwargs):
+        # Always provide default intermixed=False if caller doesn't specify it
+        if "intermixed" not in kwargs:
+            kwargs["intermixed"] = False
+        return _orig_parse_known_args(self, arg_strings, namespace, **kwargs)
+
+    argparse.ArgumentParser._parse_known_args = _parse_known_args_fixed
+# -------------------------------------------------------------------
+
+
 from pytorch_lightning.utilities import rank_zero_only
 import torch
 from dataloader.FireSpreadDataModule import FireSpreadDataModule
@@ -71,6 +89,8 @@ class MyLightningCLI(LightningCLI):
         Also define min and max metrics in wandb, because otherwise it just reports the 
         last known values, which is not what we want.
         """
+        if wandb.run is None:
+            wandb.init(project="WildfireSpreadPrediction", name="manual_init")
         config_file_name = os.path.join(wandb.run.dir, "cli_config.yaml")
 
         cfg_string = self.parser.dump(self.config, skip_none=False)
