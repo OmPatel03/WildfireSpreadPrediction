@@ -5,3 +5,7 @@ venv
 /src/wsts/wispr
 /src/wsts/lightning_logs
 /src/wsts/wandb
+/src/wsts/predictions_output/*.png
+/src/wsts/predictions_output
+/src/wsts/inference_visualization
+/src/wsts/inference_visualization/*.png
