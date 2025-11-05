@@ -65,16 +65,31 @@ def plot_fire_prediction(y_true, y_pred, idx=None):
 
     print(f"Plotting shapes — y_true: {y_true.shape}, y_pred: {y_pred.shape}")
 
+    # Ensure both ground truth and prediction are 2D masks
+    # If ground truth is continuous, threshold it at the same threshold
+    y_true_mask = (y_true > threshold).astype(np.uint8)
+    y_pred_mask = (y_pred > threshold).astype(np.uint8)
+
+    # Flatten and compute pixel-wise accuracy
+    try:
+        accuracy = 100.0 * (y_true_mask.flatten() == y_pred_mask.flatten()).mean()
+    except Exception:
+        # Fallback in case shapes are weird
+        min_len = min(y_true_mask.size, y_pred_mask.size)
+        accuracy = 100.0 * (y_true_mask.flatten()[:min_len] == y_pred_mask.flatten()[:min_len]).mean()
+
     fig, axs = plt.subplots(1, 2, figsize=(8, 4))
-    axs[0].imshow(y_true, cmap="gray")
+    axs[0].imshow(y_true_mask, cmap="gray")
     axs[0].set_title("Ground Truth")
-    axs[1].imshow(y_pred > threshold, cmap="Reds")
-    axs[1].set_title("Prediction")
-    for ax in axs: ax.axis("off")
-    plt.suptitle(f"Sample {idx}")
+    axs[1].imshow(y_pred_mask, cmap="gray")
+    axs[1].set_title(f"Prediction (Acc: {accuracy:.2f}%)")
+    for ax in axs:
+        ax.axis("off")
+
+    plt.suptitle(f"Sample {idx} — Accuracy: {accuracy:.2f}%")
     plt.tight_layout()
 
-    save_path = os.path.join(output_dir, f"sample_{idx}_prediction.png")
+    save_path = os.path.join(output_dir, f"sample_{idx}_prediction_acc_{accuracy:.2f}.png")
     plt.savefig(save_path, bbox_inches="tight", dpi=150)
     plt.close()
     print(f"Saved prediction to {save_path}")
