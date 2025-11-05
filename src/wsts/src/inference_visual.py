@@ -5,6 +5,7 @@ import numpy as np
 import os
 from matplotlib import ticker
 import shutil
+from tqdm import tqdm
 
 from models import SMPModel
 from dataloader.FireSpreadDataModule import FireSpreadDataModule
@@ -188,8 +189,8 @@ indices = random.sample(range(len(test_dataset)), num_samples_to_show)
 
 print(f"Selected sample indices: {indices}")
 
-for i, idx in enumerate(indices):
-    print(f"Processing sample {i+1}/{num_samples_to_show} (index {idx})...")
+for i, idx in enumerate(tqdm(indices, desc="Samples", unit="sample")):
+    tqdm.write(f"Processing sample {i+1}/{num_samples_to_show} (index {idx})...")
     x, y = test_dataset[idx]
     x, y = x.unsqueeze(0).to(device), y.unsqueeze(0).to(device)  # add batch dim
     with torch.no_grad():
