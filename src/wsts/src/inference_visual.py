@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 from matplotlib import ticker
+import shutil
 
 from models import SMPModel
 from dataloader.FireSpreadDataModule import FireSpreadDataModule
@@ -11,7 +12,12 @@ from dataloader.FireSpreadDataModule import FireSpreadDataModule
 checkpoint_path = "lightning_logs/wildfire_progression/99p6n9dj/checkpoints/epoch=53-step=4212.ckpt"
 data_dir = "/u50/capstone/cs4zp6g17/data/hdf5"
 output_dir = "inference_visualization"
+
+if os.path.exists(output_dir):
+    shutil.rmtree(output_dir)
+    print(f"Removed existing directory: {output_dir}, to ensure fresh output.")
 os.makedirs(output_dir, exist_ok=True)
+
 
 num_samples_to_show = 100
 threshold = 0.5
@@ -178,6 +184,8 @@ def plot_fire_prediction(y_true, y_pred, idx=None):
 
 # ---- Only pick a few random samples ----
 indices = random.sample(range(len(test_dataset)), num_samples_to_show)
+# indices = list(range(num_samples_to_show))
+
 print(f"Selected sample indices: {indices}")
 
 for i, idx in enumerate(indices):
