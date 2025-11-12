@@ -9,3 +9,4 @@ venv
 /src/wsts/predictions_output
 /src/wsts/inference_visualization
 /src/wsts/inference_visualization/*.png
+/backend/resources
