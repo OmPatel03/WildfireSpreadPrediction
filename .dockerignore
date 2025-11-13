@@ -1,12 +1,12 @@
 .git/
 *venv/
 __pycache__/
-*.Containerfile
-*.dockerignore
-*compose.yaml
+**/*.Containerfile
+**/*.dockerignore
+**/*compose.yaml
+**/*LICENSE
+**/*.md
 *.env
-*LICENSE
-*.md
 
-predictions_output/
-docs/
+**/predictions_output/
+**/docs/
