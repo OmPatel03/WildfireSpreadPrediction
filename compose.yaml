@@ -1,0 +1,17 @@
+name: wispr
+
+services:
+  backend:
+    container_name: ${COMPOSE_PROJECT_NAME:-wispr}-backend
+    # image: <repository-source>
+    build:
+      dockerfile: ./backend/backend.Containerfile
+    command: uvicorn main:app --app-dir backend/src --reload --host ${UVICORN_HOST_NAME:-0.0.0.0} --port 8000
+    environment:
+      # set env vars for inside the container
+      - HDF5_ROOT=/app/data/hdf5
+    ports:
+      - 80:8000
+    volumes:
+      - ${HDF5_ROOT_HOST:-/u50/group17/data/hdf5}:/app/data/hdf5:Z,ro
+      - ${MODEL_CHECKPOINT_HOST:-/u50/group17/models/model.ckpt}:/app/backend/resources/model.ckpt:Z,rw
