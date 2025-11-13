@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from functools import lru_cache
 from pathlib import Path
@@ -8,8 +9,9 @@ from pathlib import Path
 @lru_cache(maxsize=1)
 def ensure_wsts_on_path() -> Path:
     """Expose the research code (wsts) to the runtime sys.path."""
+    wsts_root_env = os.getenv("WSTS_ROOT")
     package_root = Path(__file__).resolve().parents[3]
-    wsts_src = package_root / "src" / "wsts" / "src"
+    wsts_src = (Path(wsts_root_env) if wsts_root_env is not None else package_root / "src" / "wsts") / "src"
     if not wsts_src.exists():
         raise FileNotFoundError(
             f"Could not locate wsts sources at {wsts_src}. "

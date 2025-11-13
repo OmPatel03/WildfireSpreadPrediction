@@ -1,0 +1,12 @@
+#python=3.11
+uvicorn[standard]
+fastapi
+strawberry-graphql
+torch
+torchvision
+segmentation-models-pytorch
+pytorch-lightning
+h5py
+
+wandb
+matplotlib
