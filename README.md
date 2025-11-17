@@ -141,3 +141,6 @@ Then, to stop and remove the container(s), run:
 ```bash
 podman compose down
 ```
+
+## Architecture
+<img width="2512" height="1446" alt="image" src="https://github.com/user-attachments/assets/221e1d24-378c-48c7-a073-d80f594030eb" />
