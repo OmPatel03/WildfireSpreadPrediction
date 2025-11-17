@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Map, { Source, Layer } from "react-map-gl/mapbox";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { heatmapLayer } from "./mapLayers";
+import { heatmapLayer, probabilityLayer } from "./mapLayers";
 import "./app.css";
 
 const testingCoordinates = [
@@ -36,12 +36,8 @@ const testingCoordinates = [
 const testingFeatures = testingCoordinates.map(([lat, lon]) => ({
   type: "Feature",
   geometry: { type: "Point", coordinates: [lon, lat] },
-  properties: { mag: randomMagnitude() },
+  properties: { probability: 0.75 },
 }));
-
-function randomMagnitude() {
-  return Math.random() * 5;
-}
 
 export default function App() {
   const [selectedId, setSelectedId] = useState(null); // ← initially none selected
@@ -214,6 +210,7 @@ export default function App() {
         {selectedId && data && (
           <Source id="wildfires" type="geojson" data={data}>
             <Layer {...heatmapLayer} />
+            <Layer {...probabilityLayer} />
           </Source>
         )}
       </Map>
