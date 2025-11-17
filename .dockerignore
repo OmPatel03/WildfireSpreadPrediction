@@ -1,0 +1,12 @@
+.git/
+*venv/
+__pycache__/
+**/*.Containerfile
+**/*.dockerignore
+**/*compose.yaml
+**/*LICENSE
+**/*.md
+*.env
+
+**/predictions_output/
+**/docs/
