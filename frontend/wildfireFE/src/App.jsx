@@ -5,6 +5,44 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import { heatmapLayer } from "./mapLayers";
 import "./app.css";
 
+const testingCoordinates = [
+  [43.46385405405405, -80.55334599414483],
+  [43.46385405405405, -80.54996759648691],
+  [43.46385405405405, -80.54658919882897],
+  [43.46385405405405, -80.54321080117104],
+  [43.46385405405405, -80.53983240351312],
+  [43.46723243243243, -80.55334599414483],
+  [43.46723243243243, -80.54996759648691],
+  [43.46723243243243, -80.54658919882897],
+  [43.46723243243243, -80.54321080117104],
+  [43.46723243243243, -80.53983240351312],
+  [43.47061081081081, -80.55334599414483],
+  [43.47061081081081, -80.54996759648691],
+  [43.47061081081081, -80.54658919882897],
+  [43.47061081081081, -80.54321080117104],
+  [43.47061081081081, -80.53983240351312],
+  [43.47398918918919, -80.55334599414483],
+  [43.47398918918919, -80.54996759648691],
+  [43.47398918918919, -80.54658919882897],
+  [43.47398918918919, -80.54321080117104],
+  [43.47398918918919, -80.53983240351312],
+  [43.47736756756757, -80.55334599414483],
+  [43.47736756756757, -80.54996759648691],
+  [43.47736756756757, -80.54658919882897],
+  [43.47736756756757, -80.54321080117104],
+  [43.47736756756757, -80.53983240351312],
+];
+
+const testingFeatures = testingCoordinates.map(([lat, lon]) => ({
+  type: "Feature",
+  geometry: { type: "Point", coordinates: [lon, lat] },
+  properties: { mag: randomMagnitude() },
+}));
+
+function randomMagnitude() {
+  return Math.random() * 5;
+}
+
 export default function App() {
   const [selectedId, setSelectedId] = useState(null); // ← initially none selected
   const [dayIndex, setDayIndex] = useState(0);
@@ -20,13 +58,7 @@ export default function App() {
       1: {
         1: {
           type: "FeatureCollection",
-          features: [
-            {
-              type: "Feature",
-              geometry: { type: "Point", coordinates: [-100, 40] },
-              properties: { mag: 2.5 },
-            },
-          ],
+          features: testingFeatures,
         },
         2: {
           type: "FeatureCollection",
@@ -107,7 +139,7 @@ export default function App() {
     if (coords && mapRef.current) {
       mapRef.current.flyTo({
         center: coords,
-        zoom: 7,
+        zoom: 12,
         speed: 0.8,
         curve: 1.4,
       });
