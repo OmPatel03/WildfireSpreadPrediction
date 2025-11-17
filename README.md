@@ -1,1 +1,5 @@
-# WIldfireSpreadPrediction
+# WildfireSpreadPrediction (WISPR)
+
+## Purpose
+
+## Architecture
