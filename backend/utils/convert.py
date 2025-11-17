@@ -4,8 +4,8 @@ def find_coord(n, m , center_lat, center_long, row, col):
     lat_step = 1 / 296
     long_step = 375 / (111000 * cos(lat_step))
     zero_lat, zero_long = center_lat - (n // 2) * lat_step - lat_step / 2 * (n % 2), center_long - (m // 2) * long_step - long_step / 2 * (m % 2)
-    lat = zero_lat + row * lat_step
-    long = zero_long + col * long_step
+    lat = zero_lat + col * lat_step
+    long = zero_long + row * long_step
     return lat, long
 
 def build_grid(n, m, center_lat, center_long):
