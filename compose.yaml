@@ -4,10 +4,7 @@ services:
   backend:
     container_name: ${COMPOSE_PROJECT_NAME:-wispr}-backend
     # image: <repository-source>
-<<<<<<< Updated upstream
-=======
     restart: always
->>>>>>> Stashed changes
     build:
       dockerfile: ./backend/backend.Containerfile
     command: uvicorn main:app --app-dir backend/src --reload --host ${UVICORN_HOST_NAME:-0.0.0.0} --port 8000
