@@ -4,43 +4,28 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { heatmapLayer, probabilityLayer } from "./mapLayers";
 import "./app.css";
+import { buildCoordinatesArray, probabilityToMagnitude } from "./util/convert.js";
+import data from '../test/response.json' with { type: 'json' };
 
-const testingCoordinates = [
-  [43.46385405405405, -80.55334599414483],
-  [43.46385405405405, -80.54996759648691],
-  [43.46385405405405, -80.54658919882897],
-  [43.46385405405405, -80.54321080117104],
-  [43.46385405405405, -80.53983240351312],
-  [43.46723243243243, -80.55334599414483],
-  [43.46723243243243, -80.54996759648691],
-  [43.46723243243243, -80.54658919882897],
-  [43.46723243243243, -80.54321080117104],
-  [43.46723243243243, -80.53983240351312],
-  [43.47061081081081, -80.55334599414483],
-  [43.47061081081081, -80.54996759648691],
-  [43.47061081081081, -80.54658919882897],
-  [43.47061081081081, -80.54321080117104],
-  [43.47061081081081, -80.53983240351312],
-  [43.47398918918919, -80.55334599414483],
-  [43.47398918918919, -80.54996759648691],
-  [43.47398918918919, -80.54658919882897],
-  [43.47398918918919, -80.54321080117104],
-  [43.47398918918919, -80.53983240351312],
-  [43.47736756756757, -80.55334599414483],
-  [43.47736756756757, -80.54996759648691],
-  [43.47736756756757, -80.54658919882897],
-  [43.47736756756757, -80.54321080117104],
-  [43.47736756756757, -80.53983240351312],
-];
+const centerLat = data["data"]["findSpread"]["fire"]["latitude"];
+const centerLong = data["data"]["findSpread"]["fire"]["longitude"];
+const probabilities =
+  data["data"]["findSpread"]["geojson"]["features"][0]["properties"]["prediction"]["probabilities"];
+const cols = data["data"]["findSpread"]["fire"]["width"]
+const rows = data["data"]["findSpread"]["fire"]["height"]
 
-const testingFeatures = testingCoordinates.map(([lat, lon]) => ({
-  type: "Feature",
-  geometry: { type: "Point", coordinates: [lon, lat] },
-  properties: { probability: 0.75 },
-}));
+console.log(probabilities);
+
+const testingFeatures = buildCoordinatesArray(
+  rows,
+  cols,
+  centerLat,
+  centerLong,
+  probabilities
+);
 
 export default function App() {
-  const [selectedId, setSelectedId] = useState(null); // ← initially none selected
+  const [selectedId, setSelectedId] = useState(null); 
   const [dayIndex, setDayIndex] = useState(0);
   const [data, setData] = useState(null);
   const mapRef = useRef(null);
@@ -62,7 +47,7 @@ export default function App() {
             {
               type: "Feature",
               geometry: { type: "Point", coordinates: [-100.3, 40.2] },
-              properties: { mag: 3.0 },
+              properties: { mag: 0.75 },
             },
           ],
         },
@@ -126,12 +111,32 @@ export default function App() {
     setSelectedId(numericId);
     setDayIndex(0);
 
-    // fly to the first coordinate
+    // fly to the the middle of all coordinates with positive probability
     const wildfire = datasets[numericId];
     if (!wildfire) return;
+
     const firstDayKey = Object.keys(wildfire)[0];
-    const firstFeature = wildfire[firstDayKey]?.features?.[0];
-    const coords = firstFeature?.geometry?.coordinates;
+    const dayData = wildfire[firstDayKey];
+    const features = dayData?.features ?? [];
+    const positive = features.filter(
+      (feature) => (feature?.properties?.mag ?? 0) > 0 && feature?.geometry?.coordinates
+    );
+
+    let coords;
+    if (positive.length > 0) {
+      const total = positive.reduce(
+        (acc, feature) => {
+          const [lon, lat] = feature.geometry.coordinates;
+          return { lat: acc.lat + lat, lon: acc.lon + lon };
+        },
+        { lat: 0, lon: 0 }
+      );
+      coords = [total.lon / positive.length, total.lat / positive.length];
+    } else {
+      const fallback = features[0];
+      coords = centerLong && centerLat ? [centerLong, centerLat] : fallback?.geometry?.coordinates;
+    }
+
     if (coords && mapRef.current) {
       mapRef.current.flyTo({
         center: coords,
@@ -210,7 +215,7 @@ export default function App() {
         {selectedId && data && (
           <Source id="wildfires" type="geojson" data={data}>
             <Layer {...heatmapLayer} />
-            <Layer {...probabilityLayer} />
+            {/* <Layer {...probabilityLayer} /> */}
           </Source>
         )}
       </Map>
