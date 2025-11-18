@@ -11,10 +11,12 @@ const centerLat = data["data"]["findSpread"]["fire"]["latitude"];
 const centerLong = data["data"]["findSpread"]["fire"]["longitude"];
 const probabilities =
   data["data"]["findSpread"]["geojson"]["features"][0]["properties"]["prediction"]["probabilities"];
-const cols = data["data"]["findSpread"]["fire"]["width"]
-const rows = data["data"]["findSpread"]["fire"]["height"]
 
-console.log(probabilities);
+const groundTruth = data["data"]["findSpread"]["geojson"]["features"][0]["properties"]["groundTruthMask"]
+const cols = data["data"]["findSpread"]["geojson"]["features"][0]["properties"]["shape"]["width"]
+const rows = data["data"]["findSpread"]["geojson"]["features"][0]["properties"]["shape"]["height"]
+
+console.log(probabilities)
 
 const testingFeatures = buildCoordinatesArray(
   rows,
@@ -22,6 +24,13 @@ const testingFeatures = buildCoordinatesArray(
   centerLat,
   centerLong,
   probabilities
+);
+const groundTruthFeatures = buildCoordinatesArray(
+  rows,
+  cols,
+  centerLat,
+  centerLong,
+  groundTruth
 );
 
 export default function App() {
@@ -43,13 +52,7 @@ export default function App() {
         },
         2: {
           type: "FeatureCollection",
-          features: [
-            {
-              type: "Feature",
-              geometry: { type: "Point", coordinates: [-100.3, 40.2] },
-              properties: { mag: 0.75 },
-            },
-          ],
+          features: groundTruthFeatures,
         },
       },
       2: {
