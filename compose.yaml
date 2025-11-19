@@ -27,6 +27,8 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:Z,ro
       - /u50/group17/dist/:/usr/share/nginx/www:Z,ro
+      - ./nginx/ssl/nginx-selfsigned.crt:/etc/ssl/certs/nginx-selfsigned.crt:Z,ro
+      - ./nginx/ssl/nginx-selfsigned.key:/etc/ssl/private/nginx-selfsigned.key:Z,ro
 
   testcont:
     container_name: ${COMPOSE_PROJECT_NAME:-wispr}-testcont
