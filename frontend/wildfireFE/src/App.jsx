@@ -3,7 +3,7 @@ import Map, { Source, Layer } from "react-map-gl/mapbox";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { heatmapLayer, probabilityLayer } from "./mapLayers";
-import "./app.css";
+import "./App.css";
 import { buildCoordinatesArray, probabilityToMagnitude } from "./util/convert.js";
 import data from '../test/response.json' with { type: 'json' };
 

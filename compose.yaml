@@ -1,12 +1,26 @@
 name: wispr
 
 services:
+  frontend-build:
+    container_name: ${COMPOSE_PROJECT_NAME:-wispr}-frontend-build
+    build:
+      dockerfile: ./frontend/frontend.build.Containerfile
+      # args:
+      #   - VITE_MAPBOX_TOKEN=${VITE_MAPBOX_TOKEN}
+      network: host
+    command: npm run build # echo $VITE_MAPBOX_TOKEN
+    environment:
+      - VITE_MAPBOX_TOKEN=${VITE_MAPBOX_TOKEN}
+    volumes:
+      - ${FE_BUILD_TARGET_DIR_HOST:-/u50/group17/dist}:/app/dist:Z,rw
+
   backend:
     container_name: ${COMPOSE_PROJECT_NAME:-wispr}-backend
     # image: <repository-source>
     restart: always
     build:
       dockerfile: ./backend/backend.Containerfile
+      network: host
     command: uvicorn main:app --app-dir backend/src --reload --host ${UVICORN_HOST_NAME:-0.0.0.0} --port 8000
     environment:
       # set env vars for inside the container

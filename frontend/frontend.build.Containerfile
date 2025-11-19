@@ -10,7 +10,7 @@ COPY ${PACKAGE_DIR}/package*.json ./
 RUN npm install --no-audit
 
 # Copy other files
-COPY ${PACKAGE_DIR} .
+COPY ${PACKAGE_DIR} ./
 
-# Run build for production
-RUN npm run build
+# # Run build for production
+# RUN npm run build
