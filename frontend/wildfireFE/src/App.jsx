@@ -281,7 +281,7 @@ export default function App() {
       if (coords && mapRef.current) {
         mapRef.current.flyTo({
           center: coords,
-          zoom: 12,
+          zoom: 9,
           speed: 0.8,
           curve: 1.4,
         });

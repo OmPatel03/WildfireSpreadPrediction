@@ -12,6 +12,27 @@ def build_geojson(prediction: SpreadPrediction) -> Dict[str, Any]:
     mask = prediction.mask
     gt = prediction.ground_truth
 
+    mask_bool = mask.astype(bool)
+    gt_bool = gt.astype(bool)
+    true_positive = int(np.logical_and(mask_bool, gt_bool).sum())
+    false_positive = int(np.logical_and(mask_bool, np.logical_not(gt_bool)).sum())
+    false_negative = int(np.logical_and(np.logical_not(mask_bool), gt_bool).sum())
+    precision = (
+        float(true_positive) / float(true_positive + false_positive)
+        if (true_positive + false_positive) > 0
+        else 0.0
+    )
+    recall = (
+        float(true_positive) / float(true_positive + false_negative)
+        if (true_positive + false_negative) > 0
+        else 0.0
+    )
+    f1 = (
+        2 * precision * recall / (precision + recall)
+        if (precision + recall) > 0
+        else 0.0
+    )
+
     feature = {
         "type": "Feature",
         "id": prediction.metadata.fire_id,
@@ -41,6 +62,9 @@ def build_geojson(prediction: SpreadPrediction) -> Dict[str, Any]:
                 "minProbability": float(np.min(probs)),
                 "positivePixels": int(np.sum(mask)),
                 "groundTruthPixels": int(np.sum(gt)),
+                "precision": precision,
+                "recall": recall,
+                "f1": f1,
             },
         },
     }
