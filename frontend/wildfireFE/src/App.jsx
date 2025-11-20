@@ -5,6 +5,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import { heatmapLayer } from "./mapLayers";
 import "./App.css";
 import { buildCoordinatesArray } from "./util/convert.js";
+import { annotateCatalogWithLocations } from "./util/geocode.js";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://wispr.cas.mcmaster.ca/api";
@@ -53,8 +54,9 @@ export default function App() {
 
   useEffect(() => {
     let ignore = false;
+    const geocodeController = new AbortController();
 
-        const fetchCatalog = async () => {
+    const fetchCatalog = async () => {
       setCatalogLoading(true);
       setCatalogError(null);
 
@@ -65,13 +67,31 @@ export default function App() {
         catalogUrl.searchParams.set("offset", 0);
 
         const payload = await fetchJson(catalogUrl);
-        const rows =
+        let rows =
           payload?.catalog ??
           payload?.data?.catalog ??
           (Array.isArray(payload) ? payload : []);
+        rows = Array.isArray(rows) ? rows : [];
         if (!ignore) {
-          setCatalog(Array.isArray(rows) ? rows : []);
+          setCatalog(rows);
           setCatalogPage(0);
+        }
+
+        if (token) {
+          try {
+            const withLocations = await annotateCatalogWithLocations(
+              rows,
+              token,
+              geocodeController.signal
+            );
+            if (!ignore) {
+              setCatalog(withLocations);
+            }
+          } catch (geoError) {
+            if (geoError?.name !== "AbortError") {
+              console.warn("Location lookup failed:", geoError);
+            }
+          }
         }
       } catch (error) {
         if (!ignore) setCatalogError(error.message ?? "Unable to load catalog");
@@ -83,8 +103,9 @@ export default function App() {
     fetchCatalog();
     return () => {
       ignore = true;
+      geocodeController.abort();
     };
-  }, []);
+  }, [token]);
 
   const totalPages = Math.max(1, Math.ceil(catalog.length / PAGE_SIZE));
   const visibleCatalog = useMemo(() => {
@@ -342,7 +363,11 @@ export default function App() {
             </option>
             {visibleCatalog.map((fire) => (
               <option key={fire.fireId} value={fire.fireId}>
-                {fire.fireId}
+                {fire.locationName ??
+                  (typeof fire.latitude === "number" &&
+                  typeof fire.longitude === "number"
+                    ? `${fire.latitude.toFixed(2)}, ${fire.longitude.toFixed(2)}`
+                    : fire.fireId)}
               </option>
             ))}
           </select>
