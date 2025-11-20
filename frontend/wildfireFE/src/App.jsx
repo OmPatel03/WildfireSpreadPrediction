@@ -4,7 +4,7 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { heatmapLayer } from "./mapLayers";
 import "./App.css";
-import { buildCoordinatesArray } from "./util/convert.js";
+import { buildCoordinatesArray, computeMetrics } from "./util/convert.js";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://wispr.cas.mcmaster.ca/api";
@@ -172,6 +172,8 @@ export default function App() {
         featureProps?.groundTruth?.mask ??
         featureProps?.groundTruth ??
         [];
+
+      const predictionMask = featureProps?.prediction?.mask ?? [];
       const shape = featureProps?.shape ?? spread?.shape ?? {};
       const meanProbability = featureProps?.summary?.meanProbability ?? null;
       const maxProbability = featureProps?.summary?.maxProbability ?? null;
@@ -186,6 +188,11 @@ export default function App() {
         payload?.fire ??
         payload?.metadata?.fire ??
         {};
+
+      const { precision, recall, f1 } = computeMetrics(
+        predictionMask,
+        groundTruth
+      );
 
       const rows = shape.height ?? fireMeta.height ?? prediction.length ?? 0; // number of rows
       const cols =
@@ -250,6 +257,9 @@ export default function App() {
           positivePixels,
           groundTruthPixels,
           totalPixels,
+          precision,
+          recall,
+          f1,
         });
       } else {
         setStatistics(null);
@@ -450,6 +460,24 @@ export default function App() {
                 </span>
               </div>
             )}
+            <div className="stats-row">
+              <span className="stats-label">Precision:</span>
+              <span className="stats-value">
+                {(statistics.precision * 100).toFixed(2)}%
+              </span>
+            </div>
+            <div className="stats-row">
+              <span className="stats-label">Recall:</span>
+              <span className="stats-value">
+                {(statistics.recall * 100).toFixed(2)}%
+              </span>
+            </div>
+            <div className="stats-row">
+              <span className="stats-label">F1 Score:</span>
+              <span className="stats-value">
+                {(statistics.f1 * 100).toFixed(2)}%
+              </span>
+            </div>
           </div>
         )}
       </div>
