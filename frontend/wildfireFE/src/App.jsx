@@ -9,9 +9,9 @@ import { buildCoordinatesArray } from "./util/convert.js";
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://wispr.cas.mcmaster.ca/api";
 const DEFAULT_YEAR = 2021;
-const MAX_FIRE_COUNT = 50;
+const MAX_FIRE_COUNT = 60;
 const PAGE_SIZE = 10;
-const SAMPLE_OFFSET = 2;
+const SAMPLE_OFFSET = 19;
 const THRESHOLD = 0.5;
 const LAYER_SEQUENCE = ["prediction", "groundTruth"];
 const LAYER_LABELS = {
@@ -180,11 +180,16 @@ export default function App() {
         payload?.metadata?.fire ??
         {};
 
-      const cols = shape.width ?? fireMeta.width ?? prediction.length ?? 0; // width = rows
       const rows =
         shape.height ??
         fireMeta.height ??
-        (prediction[0]?.length ?? prediction?.[0]?.length ?? 0); // height = cols
+        prediction.length ??
+        0; // number of rows
+      const cols =
+        shape.width ??
+        fireMeta.width ??
+        (prediction[0]?.length ?? prediction?.[0]?.length ?? 0); // number of columns
+
       const centerLat = fireCenter?.latitude ?? fireMeta.latitude;
       const centerLong = fireCenter?.longitude ?? fireMeta.longitude;
 
