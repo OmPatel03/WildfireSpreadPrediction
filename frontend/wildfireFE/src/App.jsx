@@ -53,7 +53,7 @@ export default function App() {
   useEffect(() => {
     let ignore = false;
 
-        const fetchCatalog = async () => {
+    const fetchCatalog = async () => {
       setCatalogLoading(true);
       setCatalogError(null);
 
@@ -184,24 +184,30 @@ export default function App() {
       const rows =
         shape.height ??
         fireMeta.height ??
-        (prediction[0]?.length ?? prediction?.[0]?.length ?? 0); // height = cols
+        prediction[0]?.length ??
+        prediction?.[0]?.length ??
+        0; // height = cols
       const centerLat = fireCenter?.latitude ?? fireMeta.latitude;
       const centerLong = fireCenter?.longitude ?? fireMeta.longitude;
 
-      const predictionFeatures = buildCoordinatesArray(
+      const [predictionFeatures, predictionPositive] = buildCoordinatesArray(
         rows,
         cols,
         centerLat,
         centerLong,
         prediction
       );
-      const groundTruthFeatures = buildCoordinatesArray(
+      const [groundTruthFeatures, groundTruthPositive] = buildCoordinatesArray(
         rows,
         cols,
         centerLat,
         centerLong,
         groundTruth
       );
+
+      if (predictionPositive === 0 && groundTruthPositive === 0) {
+        throw new Error("No positive fire spread predictions found");
+      }
 
       const nextLayerData = {
         prediction: {
@@ -278,7 +284,9 @@ export default function App() {
 
   const prevDay = () => {
     if (dayKeys.length === 0) return;
-    setActiveLayerIndex((index) => (index - 1 + dayKeys.length) % dayKeys.length);
+    setActiveLayerIndex(
+      (index) => (index - 1 + dayKeys.length) % dayKeys.length
+    );
   };
 
   const nextDay = () => {

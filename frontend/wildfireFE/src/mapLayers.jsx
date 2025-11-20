@@ -133,25 +133,43 @@ export const heatmapLayer = {
     ],
 
     // Much smoother color ramp (no sharp peak)
+    // "heatmap-color": [
+    //   "interpolate",
+    //   ["linear"],
+    //   ["heatmap-density"],
+
+    //   0.0,
+    //   "rgba(0,0,0,0)", // fully transparent at zero
+    //   0.05,
+    //   "rgba(33,102,172,0.35)", // faint blue very early
+    //   0.2,
+    //   "rgba(103,169,207,0.55)", // more blue
+    //   0.4,
+    //   "rgba(209,229,240,0.70)",
+    //   0.65,
+    //   "rgba(253,219,199,0.85)", // orange later in the density range
+    //   0.85,
+    //   "rgba(239,138,98,0.95)",
+    //   1.0,
+    //   "rgba(178,24,43,1.0)", // small red core
+    // ],
+
     "heatmap-color": [
       "interpolate",
       ["linear"],
       ["heatmap-density"],
-
       0.0,
-      "rgba(0,0,0,0)", // fully transparent at zero
-      0.05,
-      "rgba(33,102,172,0.35)", // faint blue very early
+      "rgba(0,0,0,0)",
       0.2,
-      "rgba(103,169,207,0.55)", // more blue
+      "rgba(33,102,172,0.35)",
       0.4,
-      "rgba(209,229,240,0.70)",
-      0.65,
-      "rgba(253,219,199,0.85)", // orange later in the density range
-      0.85,
-      "rgba(239,138,98,0.95)",
+      "rgba(103,169,207,0.55)",
+      0.6,
+      "rgba(209,229,240,0.7)",
+      0.8,
+      "rgba(253,219,199,0.85)",
       1.0,
-      "rgba(178,24,43,1.0)", // small red core
+      "rgba(239,138,98,0.75)",
     ],
     // slightly softer intensity so big blobs don’t get too harsh
     "heatmap-intensity": [
