@@ -198,7 +198,8 @@ export default function App() {
       const maxProbability = featureProps?.summary?.maxProbability ?? null;
       const minProbability = featureProps?.summary?.minProbability ?? null;
       const positivePixels = featureProps?.summary?.positivePixels ?? null;
-      const groundTruthPixels = featureProps?.summary?.groundTruthPixels ?? null;
+      const groundTruthPixels =
+        featureProps?.summary?.groundTruthPixels ?? null;
       const fireCenter =
         spread?.fire ??
         spread?.fireMeta ??
@@ -207,33 +208,35 @@ export default function App() {
         payload?.metadata?.fire ??
         {};
 
-      const rows =
-        shape.height ??
-        fireMeta.height ??
-        prediction.length ??
-        0; // number of rows
+      const rows = shape.height ?? fireMeta.height ?? prediction.length ?? 0; // number of rows
       const cols =
         shape.width ??
         fireMeta.width ??
-        (prediction[0]?.length ?? prediction?.[0]?.length ?? 0); // number of columns
+        prediction[0]?.length ??
+        prediction?.[0]?.length ??
+        0; // number of columns
 
       const centerLat = fireCenter?.latitude ?? fireMeta.latitude;
       const centerLong = fireCenter?.longitude ?? fireMeta.longitude;
 
-      const predictionFeatures = buildCoordinatesArray(
+      const [predictionFeatures, predictionPositive] = buildCoordinatesArray(
         rows,
         cols,
         centerLat,
         centerLong,
         prediction
       );
-      const groundTruthFeatures = buildCoordinatesArray(
+      const [groundTruthFeatures, groundTruthPositive] = buildCoordinatesArray(
         rows,
         cols,
         centerLat,
         centerLong,
         groundTruth
       );
+
+      if (predictionPositive === 0 && groundTruthPositive === 0) {
+        throw new Error("No positive fire spread predictions found");
+      }
 
       const nextLayerData = {
         prediction: {
@@ -256,7 +259,7 @@ export default function App() {
         const variance = meanProbability * (1 - meanProbability);
         const standardError = Math.sqrt(variance / totalPixels);
         const marginOfError = 1.96 * standardError; // 95% CI
-        
+
         setStatistics({
           meanProbability,
           confidenceInterval: {
@@ -299,7 +302,7 @@ export default function App() {
       if (coords && mapRef.current) {
         mapRef.current.flyTo({
           center: coords,
-          zoom: 12,
+          zoom: 9,
           speed: 0.8,
           curve: 1.4,
         });
@@ -336,7 +339,9 @@ export default function App() {
 
   const prevDay = () => {
     if (dayKeys.length === 0) return;
-    setActiveLayerIndex((index) => (index - 1 + dayKeys.length) % dayKeys.length);
+    setActiveLayerIndex(
+      (index) => (index - 1 + dayKeys.length) % dayKeys.length
+    );
   };
 
   const nextDay = () => {
@@ -450,7 +455,8 @@ export default function App() {
             <div className="stats-row">
               <span className="stats-label">95% CI:</span>
               <span className="stats-value">
-                [{(statistics.confidenceInterval.lower * 100).toFixed(2)}%, {(statistics.confidenceInterval.upper * 100).toFixed(2)}%]
+                [{(statistics.confidenceInterval.lower * 100).toFixed(2)}%,{" "}
+                {(statistics.confidenceInterval.upper * 100).toFixed(2)}%]
               </span>
             </div>
             {statistics.maxProbability !== null && (

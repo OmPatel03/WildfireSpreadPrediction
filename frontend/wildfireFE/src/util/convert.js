@@ -2,7 +2,7 @@ const { cos, PI } = Math;
 
 function findCoord(n, m, centerLat, centerLong, row, col) {
   const latStep = 1 / 296;
-  const longStep = 375 / (111000 * cos(latStep));
+  const longStep = 375 / (111000 * cos((centerLat * Math.PI) / 180));
   const zeroLat =
     centerLat - Math.floor(n / 2) * latStep - (latStep / 2) * (n % 2);
   const zeroLong =
@@ -31,8 +31,7 @@ function buildCoordinatesArray(n, m, centerLat, centerLong, probabilities) {
       coordinates.push(geometry);
     }
   }
-  console.log(positive);
-  return coordinates;
+  return [coordinates, positive];
 }
 
 function probabilityToMagnitude(p, maxProbability = 1) {
