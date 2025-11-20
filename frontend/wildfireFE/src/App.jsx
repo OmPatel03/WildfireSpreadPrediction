@@ -3,7 +3,7 @@ import Map, { Source, Layer } from "react-map-gl/mapbox";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { heatmapLayer } from "./mapLayers";
-import "./app.css";
+import "./App.css";
 import { buildCoordinatesArray } from "./util/convert.js";
 
 const API_BASE_URL =
@@ -46,6 +46,7 @@ export default function App() {
 
   const [spreadLoading, setSpreadLoading] = useState(false);
   const [spreadError, setSpreadError] = useState(null);
+  const [statistics, setStatistics] = useState(null);
 
   const token = import.meta.env.VITE_MAPBOX_TOKEN;
   if (!token) console.warn("VITE_MAPBOX_TOKEN not set");
@@ -172,6 +173,11 @@ export default function App() {
         featureProps?.groundTruth ??
         [];
       const shape = featureProps?.shape ?? spread?.shape ?? {};
+      const meanProbability = featureProps?.summary?.meanProbability ?? null;
+      const maxProbability = featureProps?.summary?.maxProbability ?? null;
+      const minProbability = featureProps?.summary?.minProbability ?? null;
+      const positivePixels = featureProps?.summary?.positivePixels ?? null;
+      const groundTruthPixels = featureProps?.summary?.groundTruthPixels ?? null;
       const fireCenter =
         spread?.fire ??
         spread?.fireMeta ??
@@ -222,6 +228,30 @@ export default function App() {
       setLayerData(nextLayerData);
       setActiveLayerIndex(0);
 
+      // Calculate statistics including confidence interval
+      if (meanProbability !== null) {
+        // Calculate standard error and 95% confidence interval
+        const totalPixels = rows * cols;
+        const variance = meanProbability * (1 - meanProbability);
+        const standardError = Math.sqrt(variance / totalPixels);
+        const marginOfError = 1.96 * standardError; // 95% CI
+        
+        setStatistics({
+          meanProbability,
+          confidenceInterval: {
+            lower: Math.max(0, meanProbability - marginOfError),
+            upper: Math.min(1, meanProbability + marginOfError),
+          },
+          maxProbability,
+          minProbability,
+          positivePixels,
+          groundTruthPixels,
+          totalPixels,
+        });
+      } else {
+        setStatistics(null);
+      }
+
       const focusSource = predictionFeatures.length
         ? predictionFeatures
         : groundTruthFeatures;
@@ -257,6 +287,7 @@ export default function App() {
       if (pendingSpreadRequestRef.current !== requestId) return;
       setLayerData(null);
       setData(null);
+      setStatistics(null);
       setSpreadError(error.message ?? "Unable to load fire spread");
       console.error("findSpread error:", error);
     } finally {
@@ -273,6 +304,7 @@ export default function App() {
       setSelectedId(null);
       setLayerData(null);
       setData(null);
+      setStatistics(null);
       setSpreadError(null);
       return;
     }
@@ -379,6 +411,40 @@ export default function App() {
         )}
         {spreadError && (
           <span className="status-text error">{spreadError}</span>
+        )}
+
+        {statistics && (
+          <div className="stats-box">
+            <div className="stats-title">Prediction Statistics</div>
+            <div className="stats-row">
+              <span className="stats-label">Mean Probability:</span>
+              <span className="stats-value">
+                {(statistics.meanProbability * 100).toFixed(2)}%
+              </span>
+            </div>
+            <div className="stats-row">
+              <span className="stats-label">95% CI:</span>
+              <span className="stats-value">
+                [{(statistics.confidenceInterval.lower * 100).toFixed(2)}%, {(statistics.confidenceInterval.upper * 100).toFixed(2)}%]
+              </span>
+            </div>
+            {statistics.maxProbability !== null && (
+              <div className="stats-row">
+                <span className="stats-label">Max Probability:</span>
+                <span className="stats-value">
+                  {(statistics.maxProbability * 100).toFixed(2)}%
+                </span>
+              </div>
+            )}
+            {statistics.positivePixels !== null && (
+              <div className="stats-row">
+                <span className="stats-label">Positive Pixels:</span>
+                <span className="stats-value">
+                  {statistics.positivePixels} / {statistics.totalPixels}
+                </span>
+              </div>
+            )}
+          </div>
         )}
       </div>
 

@@ -89,6 +89,27 @@ container runtime/CLI, substitute `podman` with this (e.g. `docker`).
 
 ### Building Images
 
+#### Build Frontend Builder Image
+The frontend builder image installs the required Node modules and prepares for a production build.
+Using the files in the repository, running the container is equivalent to performing a `vite build`
+operation locally, but does not require Node etc. installations on the host. It is designed to generate
+the build files in a bind-mounted volume so that they can be accessed on the host by the production web server.
+
+To build the frontend builder image, run:
+
+```bash
+podman build --network host -f frontend/frontend.build.Containerfile -t wispr-frontend-build .
+```
+
+To run the frontend builder image, use Compose:
+
+```bash
+podman compose run --rm frontend-build
+```
+
+After the container runs, the production web files should be generated and accessible in the specified host directory.
+
+
 #### Build Backend Base Image
 The backend base image packages Python and most libraries for convenience. Separation of the backend base image
 from the final, runnable image allows for quicker builds, assuming there are no major changes of requirements.
@@ -140,4 +161,9 @@ podman compose up -d
 Then, to stop and remove the container(s), run:
 ```bash
 podman compose down
+```
+
+To run only a specific container:
+```bash
+podman compose up <container-name> -d
 ```

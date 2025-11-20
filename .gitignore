@@ -10,8 +10,7 @@ __pycache__
 /src/wsts/inference_visualization/*.png
 /backend/resources
 
-<<<<<<< Updated upstream
-*local.env
-=======
+**/*.env
 **/*.local.env
->>>>>>> Stashed changes
+
+**/ssl/
