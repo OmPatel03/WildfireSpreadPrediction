@@ -3,7 +3,7 @@ import Map, { Source, Layer } from "react-map-gl/mapbox";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { heatmapLayer } from "./mapLayers";
-import "./app.css";
+import "./App.css";
 import { buildCoordinatesArray } from "./util/convert.js";
 
 const API_BASE_URL =
