@@ -7,8 +7,8 @@ function findCoord(n, m, centerLat, centerLong, row, col) {
     centerLat - Math.floor(n / 2) * latStep - (latStep / 2) * (n % 2);
   const zeroLong =
     centerLong - Math.floor(m / 2) * longStep - (longStep / 2) * (m % 2);
-  const lat = zeroLat + col * latStep;
-  const lon = zeroLong + row * longStep;
+  const lat = zeroLat + (n - row - 1) * latStep;
+  const lon = zeroLong + col * longStep;
   return [lat, lon];
 }
 

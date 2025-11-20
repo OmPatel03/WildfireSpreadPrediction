@@ -9,9 +9,9 @@ import { buildCoordinatesArray } from "./util/convert.js";
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://wispr.cas.mcmaster.ca/api";
 const DEFAULT_YEAR = 2021;
-const MAX_FIRE_COUNT = 50;
+const MAX_FIRE_COUNT = 60;
 const PAGE_SIZE = 10;
-const SAMPLE_OFFSET = 2;
+const SAMPLE_OFFSET = 19;
 const THRESHOLD = 0.5;
 const LAYER_SEQUENCE = ["prediction", "groundTruth"];
 const LAYER_LABELS = {
@@ -177,7 +177,8 @@ export default function App() {
       const maxProbability = featureProps?.summary?.maxProbability ?? null;
       const minProbability = featureProps?.summary?.minProbability ?? null;
       const positivePixels = featureProps?.summary?.positivePixels ?? null;
-      const groundTruthPixels = featureProps?.summary?.groundTruthPixels ?? null;
+      const groundTruthPixels =
+        featureProps?.summary?.groundTruthPixels ?? null;
       const fireCenter =
         spread?.fire ??
         spread?.fireMeta ??
@@ -186,13 +187,14 @@ export default function App() {
         payload?.metadata?.fire ??
         {};
 
-      const cols = shape.width ?? fireMeta.width ?? prediction.length ?? 0; // width = rows
-      const rows =
-        shape.height ??
-        fireMeta.height ??
+      const rows = shape.height ?? fireMeta.height ?? prediction.length ?? 0; // number of rows
+      const cols =
+        shape.width ??
+        fireMeta.width ??
         prediction[0]?.length ??
         prediction?.[0]?.length ??
-        0; // height = cols
+        0; // number of columns
+
       const centerLat = fireCenter?.latitude ?? fireMeta.latitude;
       const centerLong = fireCenter?.longitude ?? fireMeta.longitude;
 
@@ -236,7 +238,7 @@ export default function App() {
         const variance = meanProbability * (1 - meanProbability);
         const standardError = Math.sqrt(variance / totalPixels);
         const marginOfError = 1.96 * standardError; // 95% CI
-        
+
         setStatistics({
           meanProbability,
           confidenceInterval: {
@@ -428,7 +430,8 @@ export default function App() {
             <div className="stats-row">
               <span className="stats-label">95% CI:</span>
               <span className="stats-value">
-                [{(statistics.confidenceInterval.lower * 100).toFixed(2)}%, {(statistics.confidenceInterval.upper * 100).toFixed(2)}%]
+                [{(statistics.confidenceInterval.lower * 100).toFixed(2)}%,{" "}
+                {(statistics.confidenceInterval.upper * 100).toFixed(2)}%]
               </span>
             </div>
             {statistics.maxProbability !== null && (
