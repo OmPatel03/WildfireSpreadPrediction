@@ -2,182 +2,342 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Map, { Source, Layer } from "react-map-gl/mapbox";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { heatmapLayer, probabilityLayer } from "./mapLayers";
+import { heatmapLayer } from "./mapLayers";
 import "./App.css";
-import { buildCoordinatesArray, probabilityToMagnitude } from "./util/convert.js";
-import data from '../test/response.json' with { type: 'json' };
+import { buildCoordinatesArray } from "./util/convert.js";
 
-const centerLat = data["data"]["findSpread"]["fire"]["latitude"];
-const centerLong = data["data"]["findSpread"]["fire"]["longitude"];
-const probabilities =
-  data["data"]["findSpread"]["geojson"]["features"][0]["properties"]["prediction"]["probabilities"];
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ?? "http://wispr.cas.mcmaster.ca/api";
+const DEFAULT_YEAR = 2021;
+const MAX_FIRE_COUNT = 50;
+const PAGE_SIZE = 10;
+const SAMPLE_OFFSET = 2;
+const THRESHOLD = 0.5;
+const LAYER_SEQUENCE = ["prediction", "groundTruth"];
+const LAYER_LABELS = {
+  prediction: "Prediction",
+  groundTruth: "Ground truth",
+};
+const INITIAL_VIEW = { longitude: -100, latitude: 40, zoom: 3.5 };
 
-const groundTruth = data["data"]["findSpread"]["geojson"]["features"][0]["properties"]["groundTruthMask"]
-const cols = data["data"]["findSpread"]["geojson"]["features"][0]["properties"]["shape"]["width"]
-const rows = data["data"]["findSpread"]["geojson"]["features"][0]["properties"]["shape"]["height"]
-
-console.log(probabilities)
-
-const testingFeatures = buildCoordinatesArray(
-  rows,
-  cols,
-  centerLat,
-  centerLong,
-  probabilities
-);
-const groundTruthFeatures = buildCoordinatesArray(
-  rows,
-  cols,
-  centerLat,
-  centerLong,
-  groundTruth
-);
+async function fetchJson(url, options = {}) {
+  const headers = {
+    Accept: "application/json",
+    ...options.headers,
+  };
+  const response = await fetch(url, { ...options, headers });
+  if (!response.ok) throw new Error(`Request failed (${response.status})`);
+  return response.json();
+}
 
 export default function App() {
-  const [selectedId, setSelectedId] = useState(null); 
-  const [dayIndex, setDayIndex] = useState(0);
-  const [data, setData] = useState(null);
   const mapRef = useRef(null);
+  const pendingSpreadRequestRef = useRef(0);
+
+  const [catalog, setCatalog] = useState([]);
+  const [catalogPage, setCatalogPage] = useState(0);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState(null);
+
+  const [selectedId, setSelectedId] = useState(null);
+  const [layerData, setLayerData] = useState(null);
+  const [activeLayerIndex, setActiveLayerIndex] = useState(0);
+  const [data, setData] = useState(null);
+
+  const [spreadLoading, setSpreadLoading] = useState(false);
+  const [spreadError, setSpreadError] = useState(null);
 
   const token = import.meta.env.VITE_MAPBOX_TOKEN;
   if (!token) console.warn("VITE_MAPBOX_TOKEN not set");
 
-  // Example dataset
-  const datasets = useMemo(
-    () => ({
-      1: {
-        1: {
+  useEffect(() => {
+    let ignore = false;
+
+        const fetchCatalog = async () => {
+      setCatalogLoading(true);
+      setCatalogError(null);
+
+      try {
+        const catalogUrl = new URL(`${API_BASE_URL}/catalog`);
+        catalogUrl.searchParams.set("year", DEFAULT_YEAR);
+        catalogUrl.searchParams.set("limit", MAX_FIRE_COUNT);
+        catalogUrl.searchParams.set("offset", 0);
+
+        const payload = await fetchJson(catalogUrl);
+        const rows =
+          payload?.catalog ??
+          payload?.data?.catalog ??
+          (Array.isArray(payload) ? payload : []);
+        if (!ignore) {
+          setCatalog(Array.isArray(rows) ? rows : []);
+          setCatalogPage(0);
+        }
+      } catch (error) {
+        if (!ignore) setCatalogError(error.message ?? "Unable to load catalog");
+      } finally {
+        if (!ignore) setCatalogLoading(false);
+      }
+    };
+
+    fetchCatalog();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const totalPages = Math.max(1, Math.ceil(catalog.length / PAGE_SIZE));
+  const visibleCatalog = useMemo(() => {
+    const start = catalogPage * PAGE_SIZE;
+    return catalog.slice(start, start + PAGE_SIZE);
+  }, [catalog, catalogPage]);
+
+  const dayKeys = useMemo(
+    () => LAYER_SEQUENCE.filter((key) => layerData?.[key]),
+    [layerData]
+  );
+
+  useEffect(() => {
+    if (!layerData || dayKeys.length === 0) {
+      setData(null);
+      setActiveLayerIndex(0);
+      return;
+    }
+
+    const safeIndex = Math.min(activeLayerIndex, dayKeys.length - 1);
+    if (safeIndex !== activeLayerIndex) {
+      setActiveLayerIndex(safeIndex);
+      return;
+    }
+
+    setData(layerData[dayKeys[safeIndex]]);
+  }, [layerData, dayKeys, activeLayerIndex]);
+
+  const handleCatalogPrev = () => {
+    setCatalogPage((prev) => Math.max(prev - 1, 0));
+  };
+
+  const handleCatalogNext = () => {
+    setCatalogPage((prev) => Math.min(prev + 1, totalPages - 1));
+  };
+
+  const fetchSpreadForFire = async (fireId) => {
+    const fireMeta = catalog.find((fire) => fire.fireId === fireId);
+    if (!fireMeta) {
+      setSpreadError("Selected fire is not available in the catalog.");
+      return;
+    }
+
+    const requestId = ++pendingSpreadRequestRef.current;
+    setSpreadLoading(true);
+    setSpreadError(null);
+
+    try {
+      const body = {
+        fireId,
+        year: DEFAULT_YEAR,
+        sampleOffset: SAMPLE_OFFSET,
+        probabilityThreshold: THRESHOLD,
+      };
+
+      const payload = await fetchJson(`${API_BASE_URL}/findSpread`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (pendingSpreadRequestRef.current !== requestId) return;
+
+      const spread =
+        payload?.findSpread ?? payload?.data?.findSpread ?? payload ?? {};
+      const geojson =
+        spread?.geojson ??
+        spread?.GeoJSON ??
+        payload?.geojson ??
+        payload?.GeoJSON;
+
+      if (!geojson) {
+        throw new Error("Missing GeoJSON in find_spread response");
+      }
+
+      const featureProps =
+        geojson?.features?.[0]?.properties ?? spread?.properties ?? {};
+      const prediction =
+        featureProps?.prediction?.probabilities ??
+        featureProps?.prediction?.mask ??
+        featureProps?.prediction ??
+        [];
+      const groundTruth =
+        featureProps?.groundTruthMask ??
+        featureProps?.groundTruth?.mask ??
+        featureProps?.groundTruth ??
+        [];
+      const shape = featureProps?.shape ?? spread?.shape ?? {};
+      const fireCenter =
+        spread?.fire ??
+        spread?.fireMeta ??
+        spread?.metadata?.fire ??
+        payload?.fire ??
+        payload?.metadata?.fire ??
+        {};
+
+      const cols = shape.width ?? fireMeta.width ?? prediction.length ?? 0; // width = rows
+      const rows =
+        shape.height ??
+        fireMeta.height ??
+        (prediction[0]?.length ?? prediction?.[0]?.length ?? 0); // height = cols
+      const centerLat = fireCenter?.latitude ?? fireMeta.latitude;
+      const centerLong = fireCenter?.longitude ?? fireMeta.longitude;
+
+      const predictionFeatures = buildCoordinatesArray(
+        rows,
+        cols,
+        centerLat,
+        centerLong,
+        prediction
+      );
+      const groundTruthFeatures = buildCoordinatesArray(
+        rows,
+        cols,
+        centerLat,
+        centerLong,
+        groundTruth
+      );
+
+      const nextLayerData = {
+        prediction: {
           type: "FeatureCollection",
-          features: testingFeatures,
+          features: predictionFeatures,
         },
-        2: {
+        groundTruth: {
           type: "FeatureCollection",
           features: groundTruthFeatures,
         },
-      },
-      2: {
-        1: {
-          type: "FeatureCollection",
-          features: [
-            {
-              type: "Feature",
-              geometry: { type: "Point", coordinates: [-118, 39.5] },
-              properties: { mag: 2.0 },
-            },
-          ],
-        },
-        2: {
-          type: "FeatureCollection",
-          features: [
-            {
-              type: "Feature",
-              geometry: { type: "Point", coordinates: [-118.2, 39.6] },
-              properties: { mag: 2.7 },
-            },
-          ],
-        },
-      },
-    }),
-    []
-  );
+      };
 
-  const dayKeys = useMemo(() => {
-    if (!selectedId || !datasets[selectedId]) return [];
-    const keys = Object.keys(datasets[selectedId]);
-    const numeric = keys.every((k) => !isNaN(Number(k)));
-    return numeric
-      ? keys
-          .map(Number)
-          .sort((a, b) => a - b)
-          .map(String)
-      : keys.sort();
-  }, [datasets, selectedId]);
+      setLayerData(nextLayerData);
+      setActiveLayerIndex(0);
 
-  useEffect(() => {
-    if (!selectedId || dayKeys.length === 0) {
+      const focusSource = predictionFeatures.length
+        ? predictionFeatures
+        : groundTruthFeatures;
+      const positive = focusSource.filter(
+        (feature) =>
+          (feature?.properties?.mag ?? 0) > 0 &&
+          feature?.geometry?.coordinates?.length === 2
+      );
+
+      let coords;
+      if (positive.length > 0) {
+        const total = positive.reduce(
+          (acc, feature) => {
+            const [lon, lat] = feature.geometry.coordinates;
+            return { lat: acc.lat + lat, lon: acc.lon + lon };
+          },
+          { lat: 0, lon: 0 }
+        );
+        coords = [total.lon / positive.length, total.lat / positive.length];
+      } else if (centerLong && centerLat) {
+        coords = [centerLong, centerLat];
+      }
+
+      if (coords && mapRef.current) {
+        mapRef.current.flyTo({
+          center: coords,
+          zoom: 12,
+          speed: 0.8,
+          curve: 1.4,
+        });
+      }
+    } catch (error) {
+      if (pendingSpreadRequestRef.current !== requestId) return;
+      setLayerData(null);
       setData(null);
-      return;
+      setSpreadError(error.message ?? "Unable to load fire spread");
+      console.error("findSpread error:", error);
+    } finally {
+      if (pendingSpreadRequestRef.current === requestId) {
+        setSpreadLoading(false);
+      }
     }
-    const idx = Math.max(0, Math.min(dayIndex, dayKeys.length - 1));
-    const currentDayKey = dayKeys[idx];
-    setData(datasets[selectedId][currentDayKey]);
-  }, [selectedId, dayIndex, dayKeys, datasets]);
+  };
 
-  const handleWildfireChange = (newId) => {
+  const handleWildfireChange = (event) => {
+    const newId = event.target.value;
+
     if (newId === "none") {
       setSelectedId(null);
+      setLayerData(null);
       setData(null);
+      setSpreadError(null);
       return;
     }
 
-    const numericId = Number(newId);
-    setSelectedId(numericId);
-    setDayIndex(0);
-
-    // fly to the the middle of all coordinates with positive probability
-    const wildfire = datasets[numericId];
-    if (!wildfire) return;
-
-    const firstDayKey = Object.keys(wildfire)[0];
-    const dayData = wildfire[firstDayKey];
-    const features = dayData?.features ?? [];
-    const positive = features.filter(
-      (feature) => (feature?.properties?.mag ?? 0) > 0 && feature?.geometry?.coordinates
-    );
-
-    let coords;
-    if (positive.length > 0) {
-      const total = positive.reduce(
-        (acc, feature) => {
-          const [lon, lat] = feature.geometry.coordinates;
-          return { lat: acc.lat + lat, lon: acc.lon + lon };
-        },
-        { lat: 0, lon: 0 }
-      );
-      coords = [total.lon / positive.length, total.lat / positive.length];
-    } else {
-      const fallback = features[0];
-      coords = centerLong && centerLat ? [centerLong, centerLat] : fallback?.geometry?.coordinates;
-    }
-
-    if (coords && mapRef.current) {
-      mapRef.current.flyTo({
-        center: coords,
-        zoom: 12,
-        speed: 0.8,
-        curve: 1.4,
-      });
-    }
+    setSelectedId(newId);
+    fetchSpreadForFire(newId);
   };
 
   const prevDay = () => {
     if (dayKeys.length === 0) return;
-    setDayIndex((i) => (i - 1 + dayKeys.length) % dayKeys.length);
+    setActiveLayerIndex((index) => (index - 1 + dayKeys.length) % dayKeys.length);
   };
+
   const nextDay = () => {
     if (dayKeys.length === 0) return;
-    setDayIndex((i) => (i + 1) % dayKeys.length);
+    setActiveLayerIndex((index) => (index + 1) % dayKeys.length);
   };
 
   return (
     <>
-      <div className="overlay-top-right app-overlay controls-row">
+      <div className="overlay-top-right app-overlay controls-column">
         <div className="control">
           <label htmlFor="wildfire" className="dropdown-label">
-            Wildfire
+            Wildfire (showing {PAGE_SIZE} of {MAX_FIRE_COUNT})
           </label>
           <select
             id="wildfire"
             className="dropdown-select"
             value={selectedId ?? "none"}
-            onChange={(e) => handleWildfireChange(e.target.value)}
+            onChange={handleWildfireChange}
+            disabled={catalogLoading || catalog.length === 0}
           >
             <option value="none" disabled>
               — Select a wildfire —
             </option>
-            <option value={1}>Yellowstone</option>
-            <option value={2}>Nevada</option>
+            {visibleCatalog.map((fire) => (
+              <option key={fire.fireId} value={fire.fireId}>
+                {fire.fireId}
+              </option>
+            ))}
           </select>
+
+          <div className="pagination-controls">
+            <button
+              type="button"
+              className="arrow-btn"
+              onClick={handleCatalogPrev}
+              disabled={catalogLoading || catalogPage === 0}
+            >
+              ‹
+            </button>
+            <span className="day-label">
+              Page {Math.min(catalogPage + 1, totalPages)} / {totalPages}
+            </span>
+            <button
+              type="button"
+              className="arrow-btn"
+              onClick={handleCatalogNext}
+              disabled={catalogLoading || catalogPage >= totalPages - 1}
+            >
+              ›
+            </button>
+          </div>
+
+          {catalogLoading && (
+            <span className="status-text">Loading catalog…</span>
+          )}
+          {catalogError && (
+            <span className="status-text error">{catalogError}</span>
+          )}
         </div>
 
         <div className="day-nav">
@@ -192,7 +352,10 @@ export default function App() {
           <span className="day-label">
             {selectedId
               ? dayKeys.length
-                ? `Day: ${dayKeys[dayIndex]}`
+                ? `View: ${
+                    LAYER_LABELS[dayKeys[activeLayerIndex]] ??
+                    dayKeys[activeLayerIndex]
+                  }`
                 : "No data"
               : "No wildfire selected"}
           </span>
@@ -205,11 +368,18 @@ export default function App() {
             ›
           </button>
         </div>
+
+        {spreadLoading && (
+          <span className="status-text">Loading fire spread…</span>
+        )}
+        {spreadError && (
+          <span className="status-text error">{spreadError}</span>
+        )}
       </div>
 
       <Map
         ref={mapRef}
-        initialViewState={{ longitude: -100, latitude: 40, zoom: 3.5 }}
+        initialViewState={INITIAL_VIEW}
         mapboxAccessToken={token}
         mapStyle="mapbox://styles/mapbox/dark-v10"
         className="map-container"
@@ -218,7 +388,6 @@ export default function App() {
         {selectedId && data && (
           <Source id="wildfires" type="geojson" data={data}>
             <Layer {...heatmapLayer} />
-            {/* <Layer {...probabilityLayer} /> */}
           </Source>
         )}
       </Map>
