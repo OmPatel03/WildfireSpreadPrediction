@@ -1,0 +1,29 @@
+# Stage 1: joint training of segmentation + VQ-VAE
+seed_everything: 0
+optimizer:
+  class_path: torch.optim.AdamW
+  init_args:
+    lr: 0.001
+model:
+  class_path: train_stage1.VQPriorityStage1Module
+  init_args:
+    seg_model:
+      class_path: models.SMPModel
+      init_args:
+        encoder_name: resnet18
+        n_channels: 40
+        flatten_temporal_dimension: true
+        pos_class_weight: 236
+        loss_function: Focal
+    vqvae:
+      in_channels: 512
+      embedding_dim: 256
+      num_embeddings: 64
+      commitment_cost: 0.25
+      decay: 0.99
+      flatten_temporal: false
+    vq_loss_weight: 1.0
+    recon_loss_weight: 1.0
+
+do_train: true
+do_validate: true

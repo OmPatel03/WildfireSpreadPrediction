@@ -1,0 +1,26 @@
+# Stage 2: fine-tune segmentation with VQ-priority sampling
+seed_everything: 0
+optimizer:
+  class_path: torch.optim.AdamW
+  init_args:
+    lr: 0.0005
+model:
+  class_path: models.SMPModel
+  init_args:
+    encoder_name: resnet18
+    n_channels: 40
+    flatten_temporal_dimension: true
+    pos_class_weight: 236
+    loss_function: Focal
+
+# VQ-VAE config used to rebuild the encoder for sampling
+vqvae:
+  in_channels: 512
+  embedding_dim: 256
+  num_embeddings: 64
+  commitment_cost: 0.25
+  decay: 0.99
+  flatten_temporal: false
+
+do_train: true
+do_validate: true
