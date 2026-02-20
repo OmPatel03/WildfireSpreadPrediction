@@ -75,7 +75,7 @@ class MyLightningCLI(LightningCLI):
         parser.link_arguments("trainer.default_root_dir", "trainer.logger.init_args.save_dir")
         parser.link_arguments("model.class_path", "trainer.logger.init_args.name")
         parser.add_argument("--do_train", type=bool, help="If True: run training.")
-        parser.add_argument("--do_validate", type=bool, default=False, help="If True: compute val metrics.")
+        parser.add_argument("--do_validate", type=bool, default=True, help="If True: compute val metrics.")
         parser.add_argument("--ckpt_path", type=str, default=None, help="Path to checkpoint for resuming.")
         parser.add_argument(
             "--stage1_ckpt_path",

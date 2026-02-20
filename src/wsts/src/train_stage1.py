@@ -150,7 +150,6 @@ class MyLightningCLI(LightningCLI):
         parser.fail_untyped = False
 
         parser.link_arguments("trainer.default_root_dir", "trainer.logger.init_args.save_dir")
-        parser.link_arguments("model.class_path", "trainer.logger.init_args.name")
         parser.add_argument("--do_train", type=bool, help="If True: run training.")
         parser.add_argument("--do_validate", type=bool, default=False, help="If True: compute val metrics.")
         parser.add_argument("--ckpt_path", type=str, default=None, help="Path to checkpoint for resuming.")
@@ -162,13 +161,13 @@ class MyLightningCLI(LightningCLI):
             self.config.data.remove_duplicate_features,
         )
 
-        self.config.model.init_args.seg_model.init_args.n_channels = n_features
+        self.config.model.seg_model.init_args.n_channels = n_features
 
         train_years, _, _ = FireSpreadDataModule.split_fires(self.config.data.data_fold_id)
         _, _, missing_values_rates = get_means_stds_missing_values(train_years)
         fire_rate = 1 - missing_values_rates[-1]
         pos_class_weight = float(1 / fire_rate)
-        self.config.model.init_args.seg_model.init_args.pos_class_weight = pos_class_weight
+        self.config.model.seg_model.init_args.pos_class_weight = pos_class_weight
 
     def before_fit(self):
         self.wandb_setup()
