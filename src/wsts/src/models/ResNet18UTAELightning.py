@@ -1,7 +1,10 @@
 from typing import Any
 
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
+import wandb
+from pytorch_lightning.utilities import rank_zero_only
 
 from .BaseModel import BaseModel
 from .utae_paps_models.ltae import LTAE2d
@@ -24,6 +27,8 @@ class ResNet18UTAELightning(BaseModel):
         ltae_channels: int = 128,
         d_model: int = 256,
         n_head: int = 16,
+        use_doy: bool = False,
+        required_img_size: Any = None,
         *args: Any, 
         **kwargs: Any
     ):
@@ -32,12 +37,11 @@ class ResNet18UTAELightning(BaseModel):
             flatten_temporal_dimension=flatten_temporal_dimension,
             pos_class_weight=pos_class_weight,
             loss_function=loss_function,
-            use_doy=False,
+            use_doy=use_doy,
+            required_img_size=required_img_size,
             *args,
             **kwargs
         )
-        self.model = self
-        self.save_hyperparameters()
 
         # Shared pretrained ResNet encoder (ImageNet by default)
         self.shared_encoder = SharedResNetEncoder(
@@ -116,3 +120,22 @@ class ResNet18UTAELightning(BaseModel):
         output = self.segmentation_head(decoded)
 
         return output
+
+    @rank_zero_only
+    def on_test_epoch_end(self) -> None:
+        if self.logger is None or not hasattr(self.logger, "experiment"):
+            return
+
+        experiment = self.logger.experiment
+        if experiment is None:
+            return
+
+        conf_mat = self.conf_mat.compute().cpu().numpy()
+        wandb_table = wandb.Table(
+            data=conf_mat, columns=["PredictedBackground", "PredictedFire"]
+        )
+        experiment.log({"Test confusion matrix": wandb_table})
+
+        fig, _ = self.test_pr_curve.plot(score=True)
+        experiment.log({"Test PR Curve": wandb.Image(fig)})
+        plt.close(fig)
