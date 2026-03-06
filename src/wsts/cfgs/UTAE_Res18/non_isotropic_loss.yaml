@@ -1,0 +1,51 @@
+seed_everything: 0
+
+trainer:
+  max_epochs: 50
+  accelerator: "gpu"
+  devices: [0]
+  check_val_every_n_epoch: 1
+  num_sanity_val_steps: 0
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: "norm"
+  enable_progress_bar: true
+  enable_model_summary: true
+
+optimizer:
+  class_path: torch.optim.AdamW
+  init_args:
+    lr: 0.01
+    weight_decay: 1.0e-5
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+model:
+  class_path: ResNet18UTAELightning
+  init_args:
+    flatten_temporal_dimension: false
+    loss_function: "Focal"
+    encoder_name: "resnet18"
+    encoder_weights: "imagenet"
+    ltae_channels: 128
+    n_channels: 40
+    d_model: 256
+    n_head: 16
+    pos_class_weight: 10
+    required_img_size: null
+
+data:
+  data_dir: "/u50/joshin10/WildfireSpreadPrediction/hdf5"
+  batch_size: 8
+  n_leading_observations: 5
+  n_leading_observations_test_adjustment: 5
+  crop_side_length: 128
+  load_from_hdf5: true
+  num_workers: 4
+  remove_duplicate_features: false
+  features_to_keep: null
+  return_doy: false
+  data_fold_id: 0
+
+do_train: true
+do_test: true
+do_predict: false
