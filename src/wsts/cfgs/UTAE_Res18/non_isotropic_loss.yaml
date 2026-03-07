@@ -36,7 +36,7 @@ model:
   class_path: ResNet18UTAELightning
   init_args:
     flatten_temporal_dimension: false
-    loss_function: "Focal"
+    loss_function: "FocalDice"
     encoder_name: "resnet18"
     encoder_weights: "imagenet"
     ltae_channels: 128

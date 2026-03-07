@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from segmentation_models_pytorch.losses import (DiceLoss, JaccardLoss,
                                                 LovaszLoss)
 from torchvision.ops import sigmoid_focal_loss
+from .losses.FocalDiceLoss import FocalDiceLoss
 
 
 class BaseModel(pl.LightningModule, ABC):
@@ -283,6 +284,10 @@ class BaseModel(pl.LightningModule, ABC):
             return JaccardLoss(mode="binary")
         elif self.hparams.loss_function == "Dice":
             return DiceLoss(mode="binary")
+        elif self.hparams.loss_function == "FocalDice":
+            return FocalDiceLoss(mode="binary", alpha = 1 - self.hparams.pos_class_weight, 
+                                 gamma=2,focal_weight=0.5, dice_weight=0.5)
+        
 
     def compute_loss(self, y_hat, y):
         if self.hparams.loss_function == "Focal":
