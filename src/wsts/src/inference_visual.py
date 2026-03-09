@@ -10,7 +10,7 @@ from tqdm import tqdm
 from models import SMPModel
 from dataloader.FireSpreadDataModule import FireSpreadDataModule
 
-checkpoint_path = "lightning_logs/wildfire_progression/99p6n9dj/checkpoints/epoch=53-step=4212.ckpt"
+checkpoint_path = "/u50/capstone/cs4zp6g17/source/WildfireSpreadPrediction/src/wsts/lightning_logs/wildfire_progression/99p6n9dj/checkpoints/epoch=53-step=4212.ckpt"
 data_dir = "/u50/capstone/cs4zp6g17/data/hdf5"
 output_dir = "inference_visualization"
 

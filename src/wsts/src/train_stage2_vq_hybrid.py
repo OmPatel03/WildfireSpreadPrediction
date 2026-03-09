@@ -121,6 +121,14 @@ class MyLightningCLI(LightningCLI):
 
         self.datamodule.setup("fit")
 
+        # Strategy: Hybrid VQ + Fire-Density Weighting (Experiment 2)
+        # Combines VQ clustering (learns unique fire patterns) with fire density (prioritizes fire samples)
+        print("="*80)
+        print("EXPERIMENT: Hybrid VQ + Fire-Density Weighting")
+        print("="*80)
+        
+        # Step 1: Compute VQ clusters
+        print("Step 1: Computing VQ cluster IDs...")
         vq_wrapper = VQPriorityWrapper(
             segmentation_model=self.model,
             vqvae=vqvae,
@@ -141,8 +149,35 @@ class MyLightningCLI(LightningCLI):
             device=device,
             flatten_temporal=self.model.hparams.flatten_temporal_dimension,
         )
-        weights = compute_sample_weights(cluster_ids, vqvae.codebook.num_embeddings)
-        sampler = build_weighted_sampler(weights)
+        
+        # Step 2: Compute fire density for each sample
+        print("Step 2: Computing fire density for each sample...")
+        fire_densities = []
+        for i in range(len(self.datamodule.train_dataset)):
+            try:
+                _, y = self.datamodule.train_dataset[i]
+                fire_rate = y.float().mean().item()
+                fire_densities.append(fire_rate)
+            except Exception as e:
+                print(f"Warning: Could not compute fire density for sample {i}: {e}")
+                fire_densities.append(0.0)
+        
+        fire_densities = torch.tensor(fire_densities, dtype=torch.float32)
+        
+        # Step 3: Combine VQ weights and fire density weights
+        print("Step 3: Combining VQ clustering with fire-density weighting...")
+        vq_weights = compute_sample_weights(cluster_ids, vqvae.codebook.num_embeddings)
+        
+        # Upweight fire-dense samples
+        fire_density_weights = fire_densities.clone()
+        fire_density_weights[fire_density_weights < 0.01] = 0.5  # Downweight samples with <1% fire
+        fire_density_weights[fire_density_weights >= 0.01] = 1.0 + (fire_density_weights[fire_density_weights >= 0.01] / 0.01)  # Upweight fire-heavy samples
+        
+        # Combine: final_weight = vq_weight * fire_density_weight
+        hybrid_weights = vq_weights * fire_density_weights
+        hybrid_weights = hybrid_weights / hybrid_weights.mean()  # Normalize
+        
+        sampler = build_weighted_sampler(hybrid_weights)
 
         def _weighted_train_loader():
             return DataLoader(
@@ -154,6 +189,12 @@ class MyLightningCLI(LightningCLI):
             )
 
         self.datamodule.train_dataloader = _weighted_train_loader
+        
+        print(f"Hybrid weights computed.")
+        print(f"  VQ weights: mean={vq_weights.mean():.3f}, max={vq_weights.max():.3f}, min={vq_weights.min():.3f}")
+        print(f"  Fire density: mean={fire_densities.mean():.4f}, max={fire_densities.max():.4f}, min={fire_densities.min():.4f}")
+        print(f"  Hybrid weights: mean={hybrid_weights.mean():.3f}, max={hybrid_weights.max():.3f}, min={hybrid_weights.min():.3f}")
+        print("="*80)
 
     def before_validate(self):
         self.wandb_setup()
@@ -161,7 +202,7 @@ class MyLightningCLI(LightningCLI):
     @rank_zero_only
     def wandb_setup(self):
         if wandb.run is None:
-            wandb.init(project="WildfireSpreadPrediction", name="vq_priority_stage2")
+            wandb.init(project="WildfireSpreadPrediction", name="stage2_vq_hybrid_exp2")
         config_file_name = f"{wandb.run.dir}/cli_config.yaml"
 
         cfg_string = self.parser.dump(self.config, skip_none=False)

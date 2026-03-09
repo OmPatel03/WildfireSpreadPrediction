@@ -34,6 +34,7 @@ from utils.priority_sampler import (
     build_weighted_sampler,
     compute_cluster_ids,
     compute_sample_weights,
+    compute_fire_density_weights,
 )
 
 
@@ -121,28 +122,18 @@ class MyLightningCLI(LightningCLI):
 
         self.datamodule.setup("fit")
 
-        vq_wrapper = VQPriorityWrapper(
-            segmentation_model=self.model,
-            vqvae=vqvae,
-            feature_extractor=_default_feature_extractor,
-        )
-
-        train_loader = DataLoader(
+        # Strategy: Fire-Density Sampling (Experiment 1)
+        # Directly upweight samples by their fire pixel content
+        # This prioritizes fire-heavy samples without using VQ clustering
+        print("="*80)
+        print("EXPERIMENT: Fire-Density Sampling")
+        print("="*80)
+        print("Computing fire-density weights...")
+        fire_weights = compute_fire_density_weights(
             self.datamodule.train_dataset,
-            batch_size=self.datamodule.batch_size,
-            shuffle=False,
-            num_workers=self.datamodule.num_workers,
-            pin_memory=True,
+            fire_threshold=0.01,  # Samples with >1% fire get upweighted
         )
-
-        cluster_ids = compute_cluster_ids(
-            vq_wrapper=vq_wrapper,
-            dataloader=train_loader,
-            device=device,
-            flatten_temporal=self.model.hparams.flatten_temporal_dimension,
-        )
-        weights = compute_sample_weights(cluster_ids, vqvae.codebook.num_embeddings)
-        sampler = build_weighted_sampler(weights)
+        sampler = build_weighted_sampler(fire_weights)
 
         def _weighted_train_loader():
             return DataLoader(
@@ -154,6 +145,11 @@ class MyLightningCLI(LightningCLI):
             )
 
         self.datamodule.train_dataloader = _weighted_train_loader
+        print(f"Fire-density weights computed.")
+        print(f"  Mean weight:  {fire_weights.mean():.3f}")
+        print(f"  Max weight:   {fire_weights.max():.3f}")
+        print(f"  Min weight:   {fire_weights.min():.3f}")
+        print("="*80)
 
     def before_validate(self):
         self.wandb_setup()
@@ -161,7 +157,7 @@ class MyLightningCLI(LightningCLI):
     @rank_zero_only
     def wandb_setup(self):
         if wandb.run is None:
-            wandb.init(project="WildfireSpreadPrediction", name="vq_priority_stage2")
+            wandb.init(project="WildfireSpreadPrediction", name="stage2_fire_density_exp1")
         config_file_name = f"{wandb.run.dir}/cli_config.yaml"
 
         cfg_string = self.parser.dump(self.config, skip_none=False)

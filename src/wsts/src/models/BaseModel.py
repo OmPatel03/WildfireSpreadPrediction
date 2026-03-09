@@ -61,6 +61,11 @@ class BaseModel(pl.LightningModule, ABC):
         self.val_f1 = self.train_f1.clone()
         self.test_f1 = self.train_f1.clone()
 
+        # Fire-specific metrics (fire pixels only, ignore non-fire accuracy)
+        self.val_fire_precision = torchmetrics.Precision("binary")
+        self.val_fire_recall = torchmetrics.Recall("binary")
+        self.val_fire_f1 = torchmetrics.F1Score("binary")
+
         self.test_avg_precision = torchmetrics.AveragePrecision("binary")
         self.test_precision = torchmetrics.Precision("binary")
         self.test_recall = torchmetrics.Recall("binary")
@@ -196,7 +201,15 @@ class BaseModel(pl.LightningModule, ABC):
         y_hat, y = self.get_pred_and_gt(batch)
 
         loss = self.compute_loss(y_hat, y)
+        
+        # Update metrics
         f1 = self.val_f1(y_hat, y)
+        y_probs = torch.sigmoid(y_hat)
+        fire_prec = self.val_fire_precision(y_probs, y)
+        fire_rec = self.val_fire_recall(y_probs, y)
+        fire_f1 = self.val_fire_f1(y_probs, y)
+        
+        # Log overall metrics
         self.log(
             "val_loss",
             loss.item(),
@@ -208,12 +221,38 @@ class BaseModel(pl.LightningModule, ABC):
         )
         self.log(
             "val_f1",
-            self.val_f1,
+            f1,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,
-        )  
+        )
+        
+        # Log fire-specific metrics
+        self.log(
+            "val_fire_precision",
+            fire_prec,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+        )
+        self.log(
+            "val_fire_recall",
+            fire_rec,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+        )
+        self.log(
+            "val_fire_f1",
+            fire_f1,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
         return loss
 
     def test_step(self, batch, batch_idx):

@@ -11,7 +11,7 @@ model:
       encoder_name: resnet18
       n_channels: 40
       flatten_temporal_dimension: true
-      pos_class_weight: 236
+      pos_class_weight: 490.1
       loss_function: Focal
   vqvae:
     in_channels: 512

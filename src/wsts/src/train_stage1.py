@@ -57,6 +57,11 @@ class VQPriorityStage1Module(pl.LightningModule):
 
         self.train_f1 = torchmetrics.F1Score("binary")
         self.val_f1 = self.train_f1.clone()
+        
+        # Fire-specific metrics
+        self.val_fire_precision = torchmetrics.Precision("binary")
+        self.val_fire_recall = torchmetrics.Recall("binary")
+        self.val_fire_f1 = torchmetrics.F1Score("binary")
 
     def _prepare_seg_input(self, x: torch.Tensor) -> torch.Tensor:
         if (
@@ -142,6 +147,15 @@ class VQPriorityStage1Module(pl.LightningModule):
         self.log("val_vq_loss", vq_out.vq_loss.item(), on_step=False, on_epoch=True, prog_bar=False)
         self.log("val_recon_loss", vq_out.recon_loss.item(), on_step=False, on_epoch=True, prog_bar=False)
         self.log("val_f1", f1, on_step=False, on_epoch=True, prog_bar=True)
+        
+        # Log fire-specific metrics
+        y_probs = y_hat if y_hat.dim() == y.dim() else torch.sigmoid(y_hat)
+        fire_prec = self.val_fire_precision(y_probs, y)
+        fire_rec = self.val_fire_recall(y_probs, y)
+        fire_f1 = self.val_fire_f1(y_probs, y)
+        self.log("val_fire_precision", fire_prec, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("val_fire_recall", fire_rec, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("val_fire_f1", fire_f1, on_step=False, on_epoch=True, prog_bar=True)
         return loss
 
 
@@ -189,6 +203,11 @@ class MyLightningCLI(LightningCLI):
         wandb.define_metric("val_loss", summary="min")
         wandb.define_metric("train_f1_epoch", summary="max")
         wandb.define_metric("val_f1", summary="max")
+        
+        # Fire-specific metrics
+        wandb.define_metric("val_fire_precision", summary="max")
+        wandb.define_metric("val_fire_recall", summary="max")
+        wandb.define_metric("val_fire_f1", summary="max")
 
 
 def main():

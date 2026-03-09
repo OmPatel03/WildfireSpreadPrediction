@@ -121,6 +121,16 @@ class MyLightningCLI(LightningCLI):
 
         self.datamodule.setup("fit")
 
+        # Strategy: Subtle VQ Weighting with Fire-Density (Experiment 3 / Option C)
+        # Blends VQ clustering dominantly with fire-density in a gentle way
+        # final_weight = vq_weight^0.9 * fire_density^0.1
+        # This keeps VQ as the primary signal but adds a mild fire-density nudge
+        print("="*80)
+        print("EXPERIMENT: Subtle VQ + Fire-Density Weighting (Option C)")
+        print("="*80)
+        
+        # Step 1: Compute VQ clusters
+        print("Step 1: Computing VQ cluster IDs...")
         vq_wrapper = VQPriorityWrapper(
             segmentation_model=self.model,
             vqvae=vqvae,
@@ -141,8 +151,38 @@ class MyLightningCLI(LightningCLI):
             device=device,
             flatten_temporal=self.model.hparams.flatten_temporal_dimension,
         )
-        weights = compute_sample_weights(cluster_ids, vqvae.codebook.num_embeddings)
-        sampler = build_weighted_sampler(weights)
+        
+        # Step 2: Compute fire density for each sample
+        print("Step 2: Computing fire density for each sample...")
+        fire_densities = []
+        for i in range(len(self.datamodule.train_dataset)):
+            try:
+                _, y = self.datamodule.train_dataset[i]
+                fire_rate = y.float().mean().item()
+                fire_densities.append(fire_rate)
+            except Exception as e:
+                print(f"Warning: Could not compute fire density for sample {i}: {e}")
+                fire_densities.append(0.5)  # Use median as fallback
+        
+        fire_densities = torch.tensor(fire_densities, dtype=torch.float32)
+        # Normalize fire densities to [0.5, 1.5] range (gentle modifier)
+        fire_densities_min = fire_densities.min()
+        fire_densities_max = fire_densities.max()
+        if fire_densities_max > fire_densities_min:
+            fire_densities_norm = 0.5 + (fire_densities - fire_densities_min) / (fire_densities_max - fire_densities_min)
+        else:
+            fire_densities_norm = torch.ones_like(fire_densities)
+        
+        # Step 3: Blend VQ weights with fire-density (gently)
+        print("Step 3: Blending VQ and fire-density weights (90% VQ, 10% fire-density)...")
+        vq_weights = compute_sample_weights(cluster_ids, vqvae.codebook.num_embeddings)
+        
+        # Gentle blending: weight = vq_weight^0.9 * fire_density^0.1
+        # This keeps VQ dominant but adds a mild signal from fire density
+        blended_weights = (vq_weights ** 0.9) * (fire_densities_norm ** 0.1)
+        blended_weights = blended_weights / blended_weights.mean()  # Normalize
+        
+        sampler = build_weighted_sampler(blended_weights)
 
         def _weighted_train_loader():
             return DataLoader(
@@ -154,6 +194,12 @@ class MyLightningCLI(LightningCLI):
             )
 
         self.datamodule.train_dataloader = _weighted_train_loader
+        
+        print(f"Blended weights computed.")
+        print(f"  VQ weights: mean={vq_weights.mean():.3f}, max={vq_weights.max():.3f}, min={vq_weights.min():.3f}")
+        print(f"  Fire density (normalized): mean={fire_densities_norm.mean():.3f}, max={fire_densities_norm.max():.3f}, min={fire_densities_norm.min():.3f}")
+        print(f"  Blended weights: mean={blended_weights.mean():.3f}, max={blended_weights.max():.3f}, min={blended_weights.min():.3f}")
+        print("="*80)
 
     def before_validate(self):
         self.wandb_setup()
@@ -161,7 +207,7 @@ class MyLightningCLI(LightningCLI):
     @rank_zero_only
     def wandb_setup(self):
         if wandb.run is None:
-            wandb.init(project="WildfireSpreadPrediction", name="vq_priority_stage2")
+            wandb.init(project="WildfireSpreadPrediction", name="stage2_vq_weighted_optionc")
         config_file_name = f"{wandb.run.dir}/cli_config.yaml"
 
         cfg_string = self.parser.dump(self.config, skip_none=False)
