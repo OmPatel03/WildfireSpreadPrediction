@@ -47,23 +47,25 @@ class GEEFeatureExtractor:
         'Elevation'
     ]
     
-    def __init__(self, credentials_path: Optional[str] = None):
+    def __init__(self, credentials_path: Optional[str] = None, project: Optional[str] = None):
         """
         Initialize GEE extractor.
         
         Args:
             credentials_path: Path to GEE credentials JSON. If None, assumes already authenticated.
+            project: Google Cloud project ID for Earth Engine initialization.
         """
         try:
             if credentials_path:
-                ee.Initialize(ee.ServiceAccountCredentials(
-                    None, credentials_path
-                ))
+                credentials = ee.ServiceAccountCredentials(None, credentials_path)
+                ee.Initialize(credentials=credentials, project=project)
             else:
-                ee.Initialize()
+                ee.Initialize(project=project)
         except Exception as e:
             print(f"GEE initialization warning: {e}")
-            print("Ensure you've run: earthengine authenticate")
+            print("Ensure you've run: earthengine authenticate --auth_mode=localhost")
+            if project is None:
+                print("Set a project via EE_PROJECT or pass project='<your-gcp-project-id>'")
     
     def extract_features(
         self,

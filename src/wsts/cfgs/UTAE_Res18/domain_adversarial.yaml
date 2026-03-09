@@ -1,0 +1,78 @@
+seed_everything: 0
+
+trainer:
+  max_epochs: 50
+  accelerator: "gpu"
+  devices: [0, 1, 2, 3]
+  default_root_dir: "./lightning_logs"
+  check_val_every_n_epoch: 1
+  num_sanity_val_steps: 0
+  gradient_clip_val: 1.0
+  gradient_clip_algorithm: "norm"
+  enable_progress_bar: true
+  enable_model_summary: true
+  logger: 
+    class_path: pytorch_lightning.loggers.wandb.WandbLogger
+    init_args:
+      save_dir: "./lightning_logs"
+      project: wildfire_progression
+      log_model: true
+  callbacks: 
+    - class_path: pytorch_lightning.callbacks.model_checkpoint.ModelCheckpoint
+      init_args:
+        monitor: val_AP
+        mode: max
+    - class_path: pytorch_lightning.callbacks.early_stopping.EarlyStopping
+      init_args:
+        monitor: val_AP
+        mode: max
+        patience: 10
+        min_delta: 0.001
+
+optimizer:
+  class_path: torch.optim.AdamW
+  init_args:
+    lr: 0.01
+    weight_decay: 1.0e-5
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+
+model:
+  class_path: DomainAdversarialUTAELightning
+  init_args:
+    flatten_temporal_dimension: false
+    loss_function: "FocalDice"
+    encoder_name: "resnet18"
+    encoder_weights: "imagenet"
+    ltae_channels: 128
+    n_channels: 40
+    d_model: 256
+    n_head: 16
+    pos_class_weight: 0.01
+    required_img_size: null
+    # Domain adversarial parameters
+    enable_domain_head: true
+    domain_loss_weight: 0.01
+    domain_loss_ramp_epochs: 0
+    gradient_reversal_alpha: 1.0
+    domain_mlp_hidden: 256
+    n_years: 8
+
+data:
+  data_dir: "/u50/capstone/cs4zp6g17/data/hdf5"
+  batch_size: 8
+  n_leading_observations: 10
+  n_leading_observations_test_adjustment: 10
+  crop_side_length: 64
+  load_from_hdf5: true
+  num_workers: 4
+  remove_duplicate_features: false
+  features_to_keep: null
+  return_doy: false
+  return_year: true
+  data_fold_id: 0
+
+do_train: true
+do_validate: true
+do_test: false
+do_predict: false
