@@ -21,8 +21,8 @@ trainer:
   callbacks: 
     - class_path: pytorch_lightning.callbacks.model_checkpoint.ModelCheckpoint
       init_args:
-        monitor: val_loss
-        mode: min
+        monitor: val_AP
+        mode: max
 
 optimizer:
   class_path: torch.optim.AdamW
@@ -36,7 +36,7 @@ model:
   class_path: ResNet18UTAELightning
   init_args:
     flatten_temporal_dimension: false
-    loss_function: "FocalDice"
+    loss_function: "FocalTversky"
     encoder_name: "resnet18"
     encoder_weights: "imagenet"
     ltae_channels: 128

@@ -4,3 +4,4 @@ from .LogisticRegression import LogisticRegression
 from .SMPModel import SMPModel
 from .UTAELightning import UTAELightning
 from .ResNet18UTAELightning import ResNet18UTAELightning
+from .DomainAdversarialUTAELightning import DomainAdversarialUTAELightning

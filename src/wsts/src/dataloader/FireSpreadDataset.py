@@ -18,7 +18,7 @@ class FireSpreadDataset(Dataset):
     def __init__(self, data_dir: str, included_fire_years: List[int], n_leading_observations: int,
                  crop_side_length: int, load_from_hdf5: bool, is_train: bool, remove_duplicate_features: bool,
                  stats_years: List[int], n_leading_observations_test_adjustment: Optional[int] = None, 
-                 features_to_keep: Optional[List[int]] = None, return_doy: bool = False):
+                 features_to_keep: Optional[List[int]] = None, return_doy: bool = False, return_year: bool = False):
         """_summary_
 
         Args:
@@ -42,6 +42,7 @@ class FireSpreadDataset(Dataset):
 
         self.stats_years = stats_years
         self.return_doy = return_doy
+        self.return_year = return_year
         self.features_to_keep = features_to_keep
         self.remove_duplicate_features = remove_duplicate_features
         self.is_train = is_train
@@ -187,9 +188,15 @@ class FireSpreadDataset(Dataset):
                 raise NotImplementedError(f"Removing features is only implemented for 4D tensors, but got {x.shape=}.")
             x = x[:, self.features_to_keep, ...]
 
-        if self.return_doy:
+        # Build return tuple
+        if self.return_year and self.return_doy:
+            return x, y, doys, torch.tensor(found_fire_year, dtype=torch.long)
+        elif self.return_year:
+            return x, y, torch.tensor(found_fire_year, dtype=torch.long)
+        elif self.return_doy:
             return x, y, doys
-        return x, y
+        else:
+            return x, y
 
     def __len__(self):
         return self.length
