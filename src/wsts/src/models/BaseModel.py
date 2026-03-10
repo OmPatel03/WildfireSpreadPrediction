@@ -11,6 +11,9 @@ import matplotlib.pyplot as plt
 from segmentation_models_pytorch.losses import (DiceLoss, JaccardLoss,
                                                 LovaszLoss)
 from torchvision.ops import sigmoid_focal_loss
+from .losses.FocalDiceLoss import FocalDiceLoss
+from .losses.FrontAwareFocalDiceLoss import FrontAwareFocalDiceLoss
+from .losses.FocalTverskyLoss import FocalTverskyLoss
 
 
 class BaseModel(pl.LightningModule, ABC):
@@ -58,7 +61,8 @@ class BaseModel(pl.LightningModule, ABC):
         self.loss = self.get_loss()
 
         self.train_f1 = torchmetrics.F1Score("binary")
-        self.val_f1 = self.train_f1.clone()
+        self.train_avg_precision = torchmetrics.AveragePrecision("binary")
+        self.val_avg_precision = torchmetrics.AveragePrecision("binary")
         self.test_f1 = self.train_f1.clone()
 
         self.test_avg_precision = torchmetrics.AveragePrecision("binary")
@@ -91,13 +95,16 @@ class BaseModel(pl.LightningModule, ABC):
             _type_: _description_ Prediction and ground truth for each sample in the batch.
         """
 
-        # UTAE and TSViT use an additional doy feature as input. 
-        if self.hparams.use_doy:
-            x, y, doys = batch
+        # UTAE and TSViT use an additional doy feature as input.
+        # Some datasets can also append extra metadata (e.g., years),
+        # so we always take x/y from the first two tuple entries.
+        x, y = batch[:2]
+        if self.hparams.use_doy and len(batch) > 2:
+            doys = batch[2]
         else:
-            x, y = batch
             doys = None
 
+        prev_fire = x[:, -1, -1, :, :]
         # If the model requires a certain fixed size, perform repeated inference on crops of the image,
         # and aggregate the results. When we reach the last row or column, which might not be divisible by
         # the required size, we align the crop window with the right/bottom edge of the image. This means 
@@ -144,11 +151,11 @@ class BaseModel(pl.LightningModule, ABC):
                         agg_output[:, H1:H2, W1:W2] = self(x_crop, doys).squeeze(1)
 
                 y_hat = agg_output
-                return y_hat, y
+                return y_hat, y, prev_fire
 
         y_hat = self(x, doys).squeeze(1)
 
-        return y_hat, y
+        return y_hat, y, prev_fire
 
     def training_step(self, batch, batch_idx):
         """_summary_ Compute predictions and loss for the given batch. Log training loss and F1 score.
@@ -160,10 +167,11 @@ class BaseModel(pl.LightningModule, ABC):
         Returns:
             _type_: _description_
         """
-        y_hat, y = self.get_pred_and_gt(batch)
+        y_hat, y, prev_fire = self.get_pred_and_gt(batch)
 
-        loss = self.compute_loss(y_hat, y)
-        f1 = self.train_f1(y_hat, y)
+        loss = self.compute_loss(y_hat, y, prev_fire)
+        self.train_f1(y_hat, y)
+        self.train_avg_precision(y_hat, y)
         self.log(
             "train_loss",
             loss.item(),
@@ -181,10 +189,18 @@ class BaseModel(pl.LightningModule, ABC):
             prog_bar=True,
             logger=True,
         )
+        self.log(
+            "train_AP",
+            self.train_avg_precision,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            logger=True,
+        )
         return loss
 
     def validation_step(self, batch, batch_idx):
-        """_summary_ Compute predictions and loss for the given batch. Log validation loss and F1 score.
+        """_summary_ Compute predictions and loss for the given batch. Log validation loss and AP score.
 
         Args:
             batch (_type_): _description_
@@ -193,10 +209,10 @@ class BaseModel(pl.LightningModule, ABC):
         Returns:
             _type_: _description_
         """
-        y_hat, y = self.get_pred_and_gt(batch)
+        y_hat, y, prev_fire = self.get_pred_and_gt(batch)
 
-        loss = self.compute_loss(y_hat, y)
-        f1 = self.val_f1(y_hat, y)
+        loss = self.compute_loss(y_hat, y, prev_fire)
+        self.val_avg_precision(y_hat, y)
         self.log(
             "val_loss",
             loss.item(),
@@ -207,8 +223,8 @@ class BaseModel(pl.LightningModule, ABC):
             sync_dist=True,
         )
         self.log(
-            "val_f1",
-            self.val_f1,
+            "val_AP",
+            self.val_avg_precision,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
@@ -226,9 +242,9 @@ class BaseModel(pl.LightningModule, ABC):
         Returns:
             _type_: _description_
         """
-        y_hat, y = self.get_pred_and_gt(batch)
+        y_hat, y, prev_fire = self.get_pred_and_gt(batch)
 
-        loss = self.compute_loss(y_hat, y)
+        loss = self.compute_loss(y_hat, y, prev_fire)
         self.test_f1(y_hat, y)
         self.test_avg_precision(y_hat, y)
         self.test_precision(y_hat, y)
@@ -263,7 +279,7 @@ class BaseModel(pl.LightningModule, ABC):
         plt.close()
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        x, y = batch
+        x, y = batch[:2]
         x_af = x[:, :, -1, :, :]
         y_hat = self(x).squeeze(1)
         return x_af, y, y_hat
@@ -283,8 +299,29 @@ class BaseModel(pl.LightningModule, ABC):
             return JaccardLoss(mode="binary")
         elif self.hparams.loss_function == "Dice":
             return DiceLoss(mode="binary")
+        elif self.hparams.loss_function == "FocalDice":
+            return FocalDiceLoss(mode="binary", alpha = 1 - self.hparams.pos_class_weight, 
+                                 gamma=2,focal_weight=0.5, dice_weight=0.5)
+        elif self.hparams.loss_function == "FrontAwareFocalDice":
+            return FrontAwareFocalDiceLoss(
+                mode="binary",
+                alpha=1 - self.hparams.pos_class_weight,
+                gamma=2,
+                focal_weight=0.5,
+                dice_weight=0.3,
+                new_fire_weight=0.5,
+                front_band_weight=0.2,
+                band_width=3,
+            )
+        elif self.hparams.loss_function == "FocalTversky":
+            return FocalTverskyLoss(
+                alpha=self.hparams.pos_class_weight,
+                beta=1.0 - self.hparams.pos_class_weight,
+                gamma=1.0,
+                from_logits=True,
+            )
 
-    def compute_loss(self, y_hat, y):
+    def compute_loss(self, y_hat, y, prev_fire=None):
         if self.hparams.loss_function == "Focal":
             return self.loss(
                 y_hat,
@@ -293,5 +330,7 @@ class BaseModel(pl.LightningModule, ABC):
                 gamma=2,
                 reduction="mean",
             )
+        elif self.hparams.loss_function == "FrontAwareFocalDice":
+            return self.loss(y_hat, y.float(), prev_fire=prev_fire.float())
         else:
             return self.loss(y_hat, y.float())

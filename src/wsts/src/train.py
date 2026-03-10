@@ -1,4 +1,5 @@
 import argparse
+import json
 
 # --- Patch argparse for Python 3.12 + LightningCLI compatibility ---
 # Force _parse_known_args to always accept 'intermixed' keyword even if older call sites omit it
@@ -50,6 +51,8 @@ class MyLightningCLI(LightningCLI):
                             default=False, help="If True: compute val metrics.")
         parser.add_argument("--ckpt_path", type=str, default=None,
                             help="Path to checkpoint to load for resuming training, for testing and predicting.")
+        parser.add_argument("--metrics_output_path", type=str, default=None,
+                    help="Optional JSON output path for test metrics.")
                             
     def before_instantiate_classes(self):
         # The number of features is only known inside the data module, but we need that info to instantiate the model.
@@ -101,6 +104,8 @@ class MyLightningCLI(LightningCLI):
         wandb.define_metric("val_loss", summary="min")
         wandb.define_metric("train_f1_epoch", summary="max")
         wandb.define_metric("val_f1", summary="max")
+        wandb.define_metric("train_AP_epoch", summary="max")
+        wandb.define_metric("val_AP", summary="max")
 
 
 def main():
@@ -125,7 +130,13 @@ def main():
         cli.trainer.validate(cli.model, cli.datamodule, ckpt_path=ckpt)
 
     if cli.config.do_test:
-        cli.trainer.test(cli.model, cli.datamodule, ckpt_path=ckpt)
+        test_results = cli.trainer.test(cli.model, cli.datamodule, ckpt_path=ckpt)
+        if len(test_results) > 0:
+            print("TEST_RESULTS_JSON=" + json.dumps(test_results[0]))
+            if cli.config.metrics_output_path is not None:
+                os.makedirs(os.path.dirname(cli.config.metrics_output_path), exist_ok=True)
+                with open(cli.config.metrics_output_path, "w") as f:
+                    json.dump(test_results[0], f, indent=2)
 
     if cli.config.do_predict:
 
