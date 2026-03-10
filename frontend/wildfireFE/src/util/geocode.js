@@ -1,3 +1,5 @@
+const locationCache = new Map();
+
 async function lookupLocationName(latitude, longitude, token, signal) {
   if (
     !token ||
@@ -5,6 +7,11 @@ async function lookupLocationName(latitude, longitude, token, signal) {
     typeof longitude !== "number"
   ) {
     return null;
+  }
+
+  const cacheKey = `${latitude.toFixed(4)},${longitude.toFixed(4)}`;
+  if (locationCache.has(cacheKey)) {
+    return locationCache.get(cacheKey);
   }
 
   const params = new URLSearchParams({
@@ -19,7 +26,9 @@ async function lookupLocationName(latitude, longitude, token, signal) {
   }
   const payload = await response.json();
   const feature = payload?.features?.[0];
-  return feature?.text ?? feature?.place_name ?? null;
+  const locationName = feature?.text ?? feature?.place_name ?? null;
+  locationCache.set(cacheKey, locationName);
+  return locationName;
 }
 
 async function annotateCatalogWithLocations(fires, token, signal) {

@@ -1,853 +1,564 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import Map, { Source, Layer } from "react-map-gl/mapbox";
-import mapboxgl from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
-import {
-  heatmapLayer,
-  predictionExtrusionLayer,
-  predictionHeatmapLayer,
-} from "./mapLayers";
+import { useEffect, useMemo, useRef, useState } from "react";
+import "leaflet/dist/leaflet.css";
 import "./App.css";
+import FilterBar from "./components/FilterBar";
+import FireListPanel from "./components/FireListPanel";
+import InsightsPanel from "./components/InsightsPanel";
+import MapView from "./components/MapView";
+import TimelinePanel from "./components/TimelinePanel";
+import { fetchLayers, fetchOverview, fetchTimeline, fetchYears } from "./util/api.js";
 import { annotateCatalogWithLocations } from "./util/geocode.js";
-import {
-  buildCoordinatesArray,
-  buildExtrusionArray,
-  computeMetrics,
-} from "./util/convert.js";
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? "http://wispr.cas.mcmaster.ca/api";
 const DEFAULT_YEAR = 2021;
-const MAX_FIRE_COUNT = 60;
-const PAGE_SIZE = 10;
-const SAMPLE_OFFSET = 19;
-const THRESHOLD = 0.5;
-const LAYER_SEQUENCE = ["groundTruth", "prediction"];
-const LAYER_LABELS = {
-  prediction: "Prediction",
-  groundTruth: "Ground truth",
-};
-const DAYS_COUNT = 7; // number of fake days to generate for time-series slider
-const TERRAIN_SOURCE_ID = "mapbox-dem";
-const TERRAIN_EXAGGERATION = 1.2;
+const DEFAULT_THRESHOLD = 0.9;
+const DEFAULT_CATALOG_LIMIT = 100;
+const PAGE_SIZE = 8;
 const THREE_D_BEARING = -20;
 const THREE_D_PITCH = 55;
 const INITIAL_VIEW = {
   longitude: -100,
   latitude: 40,
-  zoom: 3.5,
-  bearing: THREE_D_BEARING,
-  pitch: 35,
+  zoom: 3.4,
+  bearing: 0,
+  pitch: 0,
 };
-const DEFAULT_TIME_SCALE_OFFSET = { x: 0, y: 0 };
+const MAP_STYLES = [
+  { value: "satellite", label: "Satellite" },
+  { value: "outdoors", label: "Outdoors" },
+  { value: "terrain", label: "Terrain" },
+];
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN ?? "";
+const FALLBACK_YEAR_OPTIONS = [DEFAULT_YEAR];
+const DEFAULT_LAYER_VISIBILITY = {
+  overview: true,
+  predictionHeatmap: true,
+  predictionPolygons: false,
+  groundTruthHeatmap: true,
+  differenceHeatmap: false,
+  extent: true,
+  origin: true,
+};
 
-async function fetchJson(url, options = {}) {
-  const headers = {
-    Accept: "application/json",
-    ...options.headers,
+function useDebouncedValue(value, delayMs) {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedValue(value);
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [delayMs, value]);
+
+  return debouncedValue;
+}
+
+function buildOverviewGeojson(fires) {
+  return {
+    type: "FeatureCollection",
+    features: fires
+      .filter(
+        (fire) =>
+          Number.isFinite(fire?.longitude) && Number.isFinite(fire?.latitude),
+      )
+      .map((fire) => ({
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [fire.longitude, fire.latitude],
+        },
+        properties: {
+          fireId: fire.fireId,
+          year: fire.year,
+          samples: fire.samples,
+          label: fire.locationName ?? fire.fireId,
+        },
+      })),
   };
-  const response = await fetch(url, { ...options, headers });
-  if (!response.ok) throw new Error(`Request failed (${response.status})`);
-  return response.json();
 }
 
 export default function App() {
   const mapRef = useRef(null);
-  const pendingSpreadRequestRef = useRef(0);
-  const timeScaleDragStateRef = useRef({
-    isDragging: false,
-    pointerId: null,
-    startX: 0,
-    startY: 0,
-    startOffsetX: 0,
-    startOffsetY: 0,
-  });
+  const timelineCacheRef = useRef(new Map());
+  const layersCacheRef = useRef(new Map());
+
+  const [year, setYear] = useState(DEFAULT_YEAR);
+  const [yearOptions, setYearOptions] = useState(FALLBACK_YEAR_OPTIONS);
+  const [threshold, setThreshold] = useState(DEFAULT_THRESHOLD);
+  const [catalogLimit, setCatalogLimit] = useState(DEFAULT_CATALOG_LIMIT);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [catalogPage, setCatalogPage] = useState(0);
+  const [selectedId, setSelectedId] = useState(null);
+  const [sampleIndex, setSampleIndex] = useState(null);
+  const [viewMode, setViewMode] = useState("2d");
+  const [mapStyle, setMapStyle] = useState(MAP_STYLES[0].value);
+  const [layerVisibility, setLayerVisibility] = useState(
+    DEFAULT_LAYER_VISIBILITY,
+  );
 
   const [catalog, setCatalog] = useState([]);
-  const [catalogPage, setCatalogPage] = useState(0);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState(null);
 
-  const [selectedId, setSelectedId] = useState(null);
-  const [layerData, setLayerData] = useState(null);
-  const [timeSeries, setTimeSeries] = useState(null);
-  const [timeIndex, setTimeIndex] = useState(0);
-  const [isTimeScaleOpen, setIsTimeScaleOpen] = useState(false);
-  const [timeScaleOffset, setTimeScaleOffset] = useState(
-    DEFAULT_TIME_SCALE_OFFSET,
-  );
-  const [isDraggingTimeScale, setIsDraggingTimeScale] = useState(false);
-  const [activeLayerIndex, setActiveLayerIndex] = useState(0);
-  const [data, setData] = useState(null);
+  const [timeline, setTimeline] = useState(null);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [timelineError, setTimelineError] = useState(null);
 
-  const [spreadLoading, setSpreadLoading] = useState(false);
-  const [spreadError, setSpreadError] = useState(null);
-  const [statistics, setStatistics] = useState(null);
+  const [layersResponse, setLayersResponse] = useState(null);
+  const [layersLoading, setLayersLoading] = useState(false);
+  const [layersError, setLayersError] = useState(null);
 
-  const token = import.meta.env.VITE_MAPBOX_TOKEN;
-  if (!token) console.warn("VITE_MAPBOX_TOKEN not set");
+  const debouncedThreshold = useDebouncedValue(threshold, 350);
+  const debouncedSampleIndex = useDebouncedValue(sampleIndex, 200);
 
-  const enableTerrain = () => {
-    const map = mapRef.current?.getMap?.();
-    if (!map) return;
+  useEffect(() => {
+    let ignore = false;
+    const controller = new AbortController();
 
-    if (!map.getSource(TERRAIN_SOURCE_ID)) {
-      map.addSource(TERRAIN_SOURCE_ID, {
-        type: "raster-dem",
-        url: "mapbox://mapbox.mapbox-terrain-dem-v1",
-        tileSize: 512,
-        maxzoom: 14,
-      });
+    async function loadYears() {
+      try {
+        const years = await fetchYears({ signal: controller.signal });
+        if (ignore || !Array.isArray(years) || years.length === 0) return;
+        setYearOptions(years);
+        setYear((currentYear) =>
+          years.includes(currentYear) ? currentYear : years[years.length - 1],
+        );
+      } catch (error) {
+        if (!ignore && error?.name !== "AbortError") {
+          console.warn("Unable to load available years:", error);
+        }
+      }
     }
 
-    map.setTerrain({
-      source: TERRAIN_SOURCE_ID,
-      exaggeration: TERRAIN_EXAGGERATION,
-    });
-  };
+    loadYears();
+    return () => {
+      ignore = true;
+      controller.abort();
+    };
+  }, []);
 
   useEffect(() => {
     let ignore = false;
     const geocodeController = new AbortController();
+    const overviewController = new AbortController();
 
-    const fetchCatalog = async () => {
+    async function loadOverview() {
       setCatalogLoading(true);
       setCatalogError(null);
 
       try {
-        const catalogUrl = new URL(`${API_BASE_URL}/catalog`);
-        catalogUrl.searchParams.set("year", DEFAULT_YEAR);
-        catalogUrl.searchParams.set("limit", MAX_FIRE_COUNT);
-        catalogUrl.searchParams.set("offset", 0);
-
-        const payload = await fetchJson(catalogUrl);
-        let rows =
-          payload?.catalog ??
-          payload?.data?.catalog ??
-          (Array.isArray(payload) ? payload : []);
-        rows = Array.isArray(rows) ? rows : [];
+        const rows = await fetchOverview({
+          year,
+          limit: catalogLimit,
+          offset: 0,
+          signal: overviewController.signal,
+        });
         if (!ignore) {
           setCatalog(rows);
           setCatalogPage(0);
+          setSelectedId((currentId) =>
+            currentId && !rows.some((fire) => fire.fireId === currentId)
+              ? null
+              : currentId,
+          );
         }
 
-        // reverse rows
-        rows = rows.slice().reverse();
+        try {
+          const enriched = await annotateCatalogWithLocations(
+            rows,
+            MAPBOX_TOKEN,
+            geocodeController.signal,
+          );
 
-        if (token) {
-          try {
-            const withLocations = await annotateCatalogWithLocations(
-              rows,
-              token,
-              geocodeController.signal,
-            );
-            if (!ignore) {
-              setCatalog(withLocations);
-            }
-          } catch (geoError) {
-            if (geoError?.name !== "AbortError") {
-              console.warn("Location lookup failed:", geoError);
-            }
+          if (!ignore) {
+            setCatalog(enriched);
+          }
+        } catch (error) {
+          if (error?.name !== "AbortError") {
+            console.warn("Location lookup failed:", error);
           }
         }
       } catch (error) {
-        if (!ignore) setCatalogError(error.message ?? "Unable to load catalog");
+        if (!ignore && error?.name !== "AbortError") {
+          setCatalogError(error.message ?? "Unable to load overview");
+          setCatalog([]);
+        }
       } finally {
-        if (!ignore) setCatalogLoading(false);
+        if (!ignore) {
+          setCatalogLoading(false);
+        }
       }
-    };
+    }
 
-    fetchCatalog();
+    loadOverview();
     return () => {
       ignore = true;
+      overviewController.abort();
       geocodeController.abort();
     };
-  }, [token]);
+  }, [catalogLimit, year]);
 
-  const totalPages = Math.max(1, Math.ceil(catalog.length / PAGE_SIZE));
-  const visibleCatalog = useMemo(() => {
-    const start = catalogPage * PAGE_SIZE;
-    return catalog.slice(start, start + PAGE_SIZE);
-  }, [catalog, catalogPage]);
+  const filteredCatalog = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) return catalog;
 
-  const dayKeys = useMemo(
-    () => LAYER_SEQUENCE.filter((key) => layerData?.[key]),
-    [layerData],
-  );
-  const safeActiveLayerIndex = Math.min(
-    activeLayerIndex,
-    Math.max(dayKeys.length - 1, 0),
-  );
-  const activeLayerKey = dayKeys[safeActiveLayerIndex] ?? null;
-  const isPredictionView = activeLayerKey === "prediction";
-  const hasTimeSeries = (timeSeries?.length ?? 0) > 0;
-
-  const resetTimeScalePopupPosition = () => {
-    setTimeScaleOffset(DEFAULT_TIME_SCALE_OFFSET);
-    setIsDraggingTimeScale(false);
-    const drag = timeScaleDragStateRef.current;
-    drag.isDragging = false;
-    drag.pointerId = null;
-  };
-
-  const handleTimeScaleDragStart = (event) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-
-    const target = event.target;
-    if (
-      target &&
-      typeof target.closest === "function" &&
-      target.closest(".time-scale-close")
-    ) {
-      return;
-    }
-
-    const drag = timeScaleDragStateRef.current;
-    drag.isDragging = true;
-    drag.pointerId = event.pointerId;
-    drag.startX = event.clientX;
-    drag.startY = event.clientY;
-    drag.startOffsetX = timeScaleOffset.x;
-    drag.startOffsetY = timeScaleOffset.y;
-
-    setIsDraggingTimeScale(true);
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  };
-
-  const handleTimeScaleDragMove = (event) => {
-    const drag = timeScaleDragStateRef.current;
-    if (!drag.isDragging || drag.pointerId !== event.pointerId) return;
-
-    const deltaX = event.clientX - drag.startX;
-    const deltaY = event.clientY - drag.startY;
-    setTimeScaleOffset({
-      x: drag.startOffsetX + deltaX,
-      y: drag.startOffsetY + deltaY,
+    return catalog.filter((fire) => {
+      const haystack = [fire.fireId, fire.locationName, fire.latestTargetDate]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
     });
-  };
+  }, [catalog, searchTerm]);
 
-  const handleTimeScaleDragEnd = (event) => {
-    const drag = timeScaleDragStateRef.current;
-    if (drag.pointerId !== event.pointerId) return;
-
-    drag.isDragging = false;
-    drag.pointerId = null;
-    setIsDraggingTimeScale(false);
-
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  };
+  const totalPages = Math.max(1, Math.ceil(filteredCatalog.length / PAGE_SIZE));
 
   useEffect(() => {
-    if (!layerData || dayKeys.length === 0) {
-      setData(null);
-      setActiveLayerIndex(0);
+    setCatalogPage((page) => Math.min(page, totalPages - 1));
+  }, [totalPages]);
+
+  const visibleCatalog = useMemo(() => {
+    const start = catalogPage * PAGE_SIZE;
+    return filteredCatalog.slice(start, start + PAGE_SIZE);
+  }, [catalogPage, filteredCatalog]);
+
+  const selectedFire = useMemo(
+    () => catalog.find((fire) => fire.fireId === selectedId) ?? null,
+    [catalog, selectedId],
+  );
+
+  const overviewData = useMemo(
+    () => buildOverviewGeojson(filteredCatalog),
+    [filteredCatalog],
+  );
+
+  useEffect(() => {
+    if (!selectedId) {
+      setTimeline(null);
+      setSampleIndex(null);
+      setTimelineError(null);
       return;
     }
 
-    const safeIndex = Math.min(activeLayerIndex, dayKeys.length - 1);
-    if (safeIndex !== activeLayerIndex) {
-      setActiveLayerIndex(safeIndex);
-      return;
-    }
+    let ignore = false;
+    const controller = new AbortController();
 
-    setData(layerData[dayKeys[safeIndex]]);
-  }, [layerData, dayKeys, activeLayerIndex]);
+    async function loadTimeline() {
+      setTimelineLoading(true);
+      setTimelineError(null);
 
-  const handleCatalogPrev = () => {
-    setCatalogPage((prev) => Math.max(prev - 1, 0));
-  };
-
-  const handleCatalogNext = () => {
-    setCatalogPage((prev) => Math.min(prev + 1, totalPages - 1));
-  };
-
-  const fetchSpreadForFire = async (fireId) => {
-    const fireMeta = catalog.find((fire) => fire.fireId === fireId);
-    if (!fireMeta) {
-      setSpreadError("Selected fire is not available in the catalog.");
-      return;
-    }
-
-    const requestId = ++pendingSpreadRequestRef.current;
-    setSpreadLoading(true);
-    setSpreadError(null);
-
-    try {
-      const body = {
-        fireId,
-        year: DEFAULT_YEAR,
-        sampleOffset: SAMPLE_OFFSET,
-        probabilityThreshold: THRESHOLD,
-      };
-
-      const payload = await fetchJson(`${API_BASE_URL}/findSpread`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (pendingSpreadRequestRef.current !== requestId) return;
-
-      const spread =
-        payload?.findSpread ?? payload?.data?.findSpread ?? payload ?? {};
-      const geojson =
-        spread?.geojson ??
-        spread?.GeoJSON ??
-        payload?.geojson ??
-        payload?.GeoJSON;
-
-      if (!geojson) {
-        throw new Error("Missing GeoJSON in find_spread response");
-      }
-
-      const featureProps =
-        geojson?.features?.[0]?.properties ?? spread?.properties ?? {};
-      const prediction =
-        featureProps?.prediction?.probabilities ??
-        featureProps?.prediction?.mask ??
-        featureProps?.prediction ??
-        [];
-      const groundTruth =
-        featureProps?.groundTruthMask ??
-        featureProps?.groundTruth?.mask ??
-        featureProps?.groundTruth ??
-        [];
-
-      const predictionMask = featureProps?.prediction?.mask ?? [];
-      const shape = featureProps?.shape ?? spread?.shape ?? {};
-      const meanProbability = featureProps?.summary?.meanProbability ?? null;
-      const maxProbability = featureProps?.summary?.maxProbability ?? null;
-      const minProbability = featureProps?.summary?.minProbability ?? null;
-      const positivePixels = featureProps?.summary?.positivePixels ?? null;
-      const groundTruthPixels =
-        featureProps?.summary?.groundTruthPixels ?? null;
-      const fireCenter =
-        spread?.fire ??
-        spread?.fireMeta ??
-        spread?.metadata?.fire ??
-        payload?.fire ??
-        payload?.metadata?.fire ??
-        {};
-
-      const { precision, recall, f1, accuracy } = computeMetrics(
-        predictionMask,
-        groundTruth,
-      );
-
-      const rows = shape.height ?? fireMeta.height ?? prediction.length ?? 0; // number of rows
-      const cols =
-        shape.width ??
-        fireMeta.width ??
-        prediction[0]?.length ??
-        prediction?.[0]?.length ??
-        0; // number of columns
-
-      const centerLat = fireCenter?.latitude ?? fireMeta.latitude;
-      const centerLong = fireCenter?.longitude ?? fireMeta.longitude;
-
-      const [predictionFeatures, predictionPositive] = buildExtrusionArray(
-        rows,
-        cols,
-        centerLat,
-        centerLong,
-        prediction,
-      );
-      const [groundTruthFeatures, groundTruthPositive] = buildCoordinatesArray(
-        rows,
-        cols,
-        centerLat,
-        centerLong,
-        groundTruth,
-      );
-
-      if (predictionPositive === 0 && groundTruthPositive === 0) {
-        throw new Error("No positive fire spread predictions found");
-      }
-
-      const nextLayerData = {
-        prediction: {
-          type: "FeatureCollection",
-          features: predictionFeatures,
-        },
-        groundTruth: {
-          type: "FeatureCollection",
-          features: groundTruthFeatures,
-        },
-      };
-
-      setLayerData(nextLayerData);
-      setActiveLayerIndex(0);
-
-      // Generate a fake time-series (DAYS_COUNT) for the prediction layer by
-      // scaling the magnitude across days so the fire appears to grow/shrink.
-      // We'll only create a series for the "prediction" features to keep this
-      // lightweight. Each element is a GeoJSON FeatureCollection.
       try {
-        const baseFeatures = predictionFeatures || [];
-        const series = [];
-        for (let d = 0; d < DAYS_COUNT; d++) {
-          const t = (d + 1) / DAYS_COUNT; // progression 0..1
-          const features = baseFeatures.map((f) => {
-            // shallow clone feature and properties
-            const nf = {
-              type: f.type,
-              geometry: f.geometry,
-              properties: { ...f.properties },
-            };
-            // scale mag so early days are small and later days grow
-            const baseMag = Number(f.properties?.mag ?? 0);
-            // apply growth curve with a small random jitter so frames look natural
-            const jitter = (Math.random() - 0.5) * 0.08 * baseMag;
-            nf.properties.mag = Math.max(
-              0,
-              baseMag * (0.25 + 0.75 * t) + jitter,
-            );
-            return nf;
+        const timelineCacheKey = `${year}:${selectedId}`;
+        const payload = timelineCacheRef.current.get(timelineCacheKey)
+          ?? await fetchTimeline({
+            fireId: selectedId,
+            year,
+            signal: controller.signal,
           });
-
-          series.push({ type: "FeatureCollection", features });
+        timelineCacheRef.current.set(timelineCacheKey, payload);
+        if (ignore) return;
+        setTimeline(payload);
+        setSampleIndex((current) => {
+          const frameIndices = payload.frames?.map((frame) => frame.sampleIndex) ?? [];
+          if (
+            Number.isInteger(current) &&
+            frameIndices.includes(current)
+          ) {
+            return current;
+          }
+          return payload.defaultSampleIndex ?? 0;
+        });
+      } catch (error) {
+        if (!ignore && error?.name !== "AbortError") {
+          setTimeline(null);
+          setSampleIndex(null);
+          setTimelineError(error.message ?? "Unable to load timeline");
         }
-
-        setTimeSeries(series);
-        setTimeIndex(0);
-        resetTimeScalePopupPosition();
-        setIsTimeScaleOpen(true);
-      } catch {
-        // if generation fails, clear timeSeries so original single-frame rendering stays
-        setTimeSeries(null);
-        setTimeIndex(0);
-        resetTimeScalePopupPosition();
-        setIsTimeScaleOpen(false);
-      }
-
-      // Calculate statistics including confidence interval
-      if (meanProbability !== null) {
-        // Calculate standard error and 95% confidence interval
-        const totalPixels = rows * cols;
-        const variance = meanProbability * (1 - meanProbability);
-        const standardError = Math.sqrt(variance / totalPixels);
-        const marginOfError = 1.96 * standardError; // 95% CI
-
-        setStatistics({
-          meanProbability,
-          confidenceInterval: {
-            lower: Math.max(0, meanProbability - marginOfError),
-            upper: Math.min(1, meanProbability + marginOfError),
-          },
-          maxProbability,
-          minProbability,
-          positivePixels,
-          groundTruthPixels,
-          totalPixels,
-          precision,
-          recall,
-          f1,
-          accuracy,
-        });
-      } else {
-        setStatistics(null);
-      }
-
-      const focusSource = predictionFeatures.length
-        ? predictionFeatures
-        : groundTruthFeatures;
-      const positive = focusSource
-        .filter((feature) => (feature?.properties?.mag ?? 0) > 0)
-        .map((feature) => ({
-          lon:
-            feature?.properties?.lon ??
-            feature?.geometry?.coordinates?.[0] ??
-            null,
-          lat:
-            feature?.properties?.lat ??
-            feature?.geometry?.coordinates?.[1] ??
-            null,
-        }))
-        .filter(
-          (coord) => Number.isFinite(coord.lon) && Number.isFinite(coord.lat),
-        );
-
-      let coords;
-      if (positive.length > 0) {
-        console.log(`Focusing map on ${positive.length} positive features`);
-        console.log("all positive features:", positive);
-        const total = positive.reduce(
-          (acc, coord) => {
-            return { lat: acc.lat + coord.lat, lon: acc.lon + coord.lon };
-          },
-          { lat: 0, lon: 0 },
-        );
-        coords = [total.lon / positive.length, total.lat / positive.length];
-      } else if (centerLong && centerLat) {
-        coords = [centerLong, centerLat];
-      }
-
-      if (coords && mapRef.current) {
-        mapRef.current.flyTo({
-          center: coords,
-          zoom: 9,
-          bearing: THREE_D_BEARING,
-          pitch: THREE_D_PITCH,
-          speed: 0.8,
-          curve: 1.4,
-        });
-      }
-    } catch (error) {
-      if (pendingSpreadRequestRef.current !== requestId) return;
-      setLayerData(null);
-      setData(null);
-      setStatistics(null);
-      setSpreadError(error.message ?? "Unable to load fire spread");
-      setTimeSeries(null);
-      setTimeIndex(0);
-      resetTimeScalePopupPosition();
-      setIsTimeScaleOpen(false);
-      console.error("findSpread error:", error);
-    } finally {
-      if (pendingSpreadRequestRef.current === requestId) {
-        setSpreadLoading(false);
+      } finally {
+        if (!ignore) {
+          setTimelineLoading(false);
+        }
       }
     }
-  };
 
-  const handleWildfireChange = (event) => {
-    const newId = event.target.value;
+    loadTimeline();
+    return () => {
+      ignore = true;
+      controller.abort();
+    };
+  }, [selectedId, year]);
 
-    if (newId === "none") {
-      setSelectedId(null);
-      setLayerData(null);
-      setData(null);
-      setStatistics(null);
-      setSpreadError(null);
-      setTimeSeries(null);
-      setTimeIndex(0);
-      resetTimeScalePopupPosition();
-      setIsTimeScaleOpen(false);
+  useEffect(() => {
+    if (!selectedId || debouncedSampleIndex === null || debouncedSampleIndex === undefined) {
+      setLayersResponse(null);
+      setLayersError(null);
       return;
     }
 
-    setSelectedId(newId);
-    fetchSpreadForFire(newId);
-  };
+    let ignore = false;
+    const controller = new AbortController();
 
-  const prevDay = () => {
-    if (dayKeys.length === 0) return;
-    setActiveLayerIndex(
-      (index) => (index - 1 + dayKeys.length) % dayKeys.length,
+    async function loadLayers() {
+      setLayersLoading(true);
+      setLayersError(null);
+
+      try {
+        const layerCacheKey = [
+          year,
+          selectedId,
+          debouncedSampleIndex,
+          debouncedThreshold,
+        ].join(":");
+        const payload = layersCacheRef.current.get(layerCacheKey)
+          ?? await fetchLayers({
+            fireId: selectedId,
+            year,
+            sampleIndex: debouncedSampleIndex,
+            threshold: debouncedThreshold,
+            signal: controller.signal,
+          });
+        layersCacheRef.current.set(layerCacheKey, payload);
+        if (ignore) return;
+        setLayersResponse(payload);
+      } catch (error) {
+        if (!ignore && error?.name !== "AbortError") {
+          setLayersResponse(null);
+          setLayersError(error.message ?? "Unable to load fire layers");
+        }
+      } finally {
+        if (!ignore) {
+          setLayersLoading(false);
+        }
+      }
+    }
+
+    loadLayers();
+    return () => {
+      ignore = true;
+      controller.abort();
+    };
+  }, [debouncedSampleIndex, debouncedThreshold, selectedId, year]);
+
+  useEffect(() => {
+    if (!selectedFire || !mapRef.current) return;
+
+    const bbox = selectedFire.bbox;
+    const activeLayers = layersResponse?.layers ?? null;
+    const map = mapRef.current;
+    const horizontalPadding = Math.min(
+      Math.max(Math.round(window.innerWidth * 0.16), 140),
+      240,
     );
-  };
+    const verticalPadding = Math.min(
+      Math.max(Math.round(window.innerHeight * 0.1), 64),
+      110,
+    );
 
-  const nextDay = () => {
-    if (dayKeys.length === 0) return;
-    setActiveLayerIndex((index) => (index + 1) % dayKeys.length);
-  };
+    map.invalidateSize?.();
 
-  // Generate a demo time-series (client-side fake data) for testing the slider
-  const generateDemoTimeSeries = (
-    centerLat = INITIAL_VIEW.latitude,
-    centerLon = INITIAL_VIEW.longitude,
-    points = 800,
-  ) => {
-    try {
-      const bases = Array.from({ length: points }, () => {
-        // random polar distribution around center
-        const angle = Math.random() * Math.PI * 2;
-        const radius = Math.random() * 0.12; // degrees (small area)
-        const lat = centerLat + Math.cos(angle) * radius;
-        const lon = centerLon + Math.sin(angle) * radius;
-        const baseMag = Math.random() * 5 + 0.05; // map heat range (0..6)
-        const jitter = (Math.random() - 0.5) * 0.2;
-        return { lat, lon, baseMag, jitter };
+    const candidateFeatures = [
+      ...(activeLayers?.predictionHeatmap?.features ?? []),
+      ...(activeLayers?.groundTruthHeatmap?.features ?? []),
+    ];
+
+    if (candidateFeatures.length > 0) {
+      let minLat = Infinity;
+      let minLon = Infinity;
+      let maxLat = -Infinity;
+      let maxLon = -Infinity;
+
+      candidateFeatures.forEach((feature) => {
+        const [lon, lat] = feature?.geometry?.coordinates ?? [];
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+        minLat = Math.min(minLat, lat);
+        minLon = Math.min(minLon, lon);
+        maxLat = Math.max(maxLat, lat);
+        maxLon = Math.max(maxLon, lon);
       });
 
-      const series = [];
-      for (let d = 0; d < DAYS_COUNT; d++) {
-        const t = (d + 1) / DAYS_COUNT; // progression 0..1
-        const features = bases.map((p) => ({
-          type: "Feature",
-          geometry: { type: "Point", coordinates: [p.lon, p.lat] },
-          properties: {
-            mag: Math.max(0, p.baseMag * (0.25 + 0.75 * t) + p.jitter),
-            lat: p.lat,
-          },
-        }));
-        series.push({ type: "FeatureCollection", features });
-      }
+      if (
+        Number.isFinite(minLat) &&
+        Number.isFinite(minLon) &&
+        Number.isFinite(maxLat) &&
+        Number.isFinite(maxLon)
+      ) {
+        const latPad = Math.max((maxLat - minLat) * 0.35, 0.01);
+        const lonPad = Math.max((maxLon - minLon) * 0.35, 0.01);
 
-      setTimeSeries(series);
-      setTimeIndex(0);
-      resetTimeScalePopupPosition();
-      setIsTimeScaleOpen(true);
-      // show demo as selected so the UI will render the source
-      setSelectedId("demo");
-      setData(series[0]);
-      // fly to demo center for convenience
-      if (mapRef.current) {
-        mapRef.current.flyTo({ center: [centerLon, centerLat], zoom: 9 });
+        map.fitBounds(
+          [
+            [minLat - latPad, minLon - lonPad],
+            [maxLat + latPad, maxLon + lonPad],
+          ],
+          {
+            paddingTopLeft: [horizontalPadding, verticalPadding],
+            paddingBottomRight: [horizontalPadding, verticalPadding + 8],
+            maxZoom: 13,
+            animate: true,
+            duration: 1,
+          },
+        );
+        return;
       }
-    } catch (err) {
-      console.error("demo generation failed", err);
-      setTimeSeries(null);
-      setTimeIndex(0);
-      resetTimeScalePopupPosition();
-      setIsTimeScaleOpen(false);
+    }
+
+    if (
+      bbox &&
+      Number.isFinite(bbox.minLon) &&
+      Number.isFinite(bbox.minLat) &&
+      Number.isFinite(bbox.maxLon) &&
+      Number.isFinite(bbox.maxLat)
+    ) {
+      map.fitBounds(
+        [
+          [bbox.minLat, bbox.minLon],
+          [bbox.maxLat, bbox.maxLon],
+        ],
+        {
+          paddingTopLeft: [horizontalPadding, verticalPadding],
+          paddingBottomRight: [horizontalPadding, verticalPadding + 10],
+          maxZoom: 12.5,
+          animate: true,
+          duration: 1,
+        },
+      );
+      return;
+    }
+
+    map.flyTo([selectedFire.latitude, selectedFire.longitude], 8.2, {
+      animate: true,
+      duration: 1,
+    });
+  }, [layersResponse, selectedFire]);
+
+  const currentFrame = useMemo(() => {
+    if (!timeline?.frames?.length || sampleIndex === null || sampleIndex === undefined) {
+      return null;
+    }
+    return (
+      timeline.frames.find((frame) => frame.sampleIndex === sampleIndex) ??
+      timeline.frames[sampleIndex] ??
+      null
+    );
+  }, [sampleIndex, timeline]);
+
+  const currentFramePosition = useMemo(() => {
+    if (!timeline?.frames?.length || sampleIndex === null || sampleIndex === undefined) {
+      return 0;
+    }
+    const frameIndex = timeline.frames.findIndex(
+      (frame) => frame.sampleIndex === sampleIndex,
+    );
+    return frameIndex >= 0 ? frameIndex : 0;
+  }, [sampleIndex, timeline]);
+
+  const handleToggleLayer = (layerKey) => {
+    setLayerVisibility((current) => ({
+      ...current,
+      [layerKey]: !current[layerKey],
+    }));
+  };
+
+  const handleSelectFire = (fireId) => {
+    setSelectedId(fireId);
+  };
+
+  const handleTimelineStep = (step) => {
+    const frames = timeline?.frames ?? [];
+    if (!frames.length) return;
+
+    const nextPosition = Math.min(
+      Math.max(currentFramePosition + step, 0),
+      frames.length - 1,
+    );
+    setSampleIndex(frames[nextPosition]?.sampleIndex ?? null);
+  };
+
+  const handleTimelineChange = (position) => {
+    const frames = timeline?.frames ?? [];
+    const nextFrame = frames[position];
+    if (nextFrame) {
+      setSampleIndex(nextFrame.sampleIndex);
     }
   };
+
+  const fireLayers = layersResponse?.layers ?? null;
+  const fireBasemap = layersResponse?.basemap ?? null;
+  const fireSummary = layersResponse?.summary ?? null;
+  const insightFire = useMemo(() => {
+    if (selectedFire && layersResponse?.fire) {
+      return { ...layersResponse.fire, ...selectedFire };
+    }
+    return layersResponse?.fire ?? selectedFire;
+  }, [layersResponse, selectedFire]);
 
   return (
-    <>
-      <div className="overlay-top-right app-overlay controls-column">
-        <div className="control">
-          <label htmlFor="wildfire" className="dropdown-label">
-            Wildfire (showing {PAGE_SIZE} of {MAX_FIRE_COUNT})
-          </label>
-          <select
-            id="wildfire"
-            className="dropdown-select"
-            value={selectedId ?? "none"}
-            onChange={handleWildfireChange}
-            disabled={catalogLoading || catalog.length === 0}
-          >
-            <option value="none" disabled>
-              — Select a wildfire —
-            </option>
-            {visibleCatalog.map((fire) => (
-              <option key={fire.fireId} value={fire.fireId}>
-                {fire.locationName ??
-                  (typeof fire.latitude === "number" &&
-                  typeof fire.longitude === "number"
-                    ? `${fire.latitude.toFixed(2)}, ${fire.longitude.toFixed(
-                        2,
-                      )}`
-                    : fire.fireId)}
-              </option>
-            ))}
-          </select>
-
-          <div className="pagination-controls">
-            <button
-              type="button"
-              className="arrow-btn"
-              onClick={handleCatalogPrev}
-              disabled={catalogLoading || catalogPage === 0}
-            >
-              ‹
-            </button>
-            <span className="day-label">
-              Page {Math.min(catalogPage + 1, totalPages)} / {totalPages}
-            </span>
-            <button
-              type="button"
-              className="arrow-btn"
-              onClick={handleCatalogNext}
-              disabled={catalogLoading || catalogPage >= totalPages - 1}
-            >
-              ›
-            </button>
-          </div>
-
-          {catalogLoading && (
-            <span className="status-text">Loading catalog…</span>
-          )}
-          {catalogError && (
-            <span className="status-text error">{catalogError}</span>
-          )}
-        </div>
-
-        <div className="day-nav">
-          <button
-            type="button"
-            className="arrow-btn"
-            onClick={prevDay}
-            disabled={!selectedId || dayKeys.length <= 1}
-          >
-            ‹
-          </button>
-          <span className="day-label">
-            {selectedId
-              ? dayKeys.length
-                ? `View: ${
-                    LAYER_LABELS[dayKeys[safeActiveLayerIndex]] ??
-                    dayKeys[safeActiveLayerIndex]
-                  }`
-                : "No data"
-              : "No wildfire selected"}
-          </span>
-          <button
-            type="button"
-            className="arrow-btn"
-            onClick={nextDay}
-            disabled={!selectedId || dayKeys.length <= 1}
-          >
-            ›
-          </button>
-        </div>
-
-        <div className="control">
-          <button
-            type="button"
-            className="dropdown-select"
-            onClick={() => generateDemoTimeSeries()}
-            title="Generate demo multi-day data for the slider"
-          >
-            Load demo time-series
-          </button>
-        </div>
-
-        {spreadLoading && (
-          <span className="status-text">Loading fire spread…</span>
-        )}
-        {spreadError && (
-          <span className="status-text error">{spreadError}</span>
-        )}
-
-        {statistics && (
-          <div className="stats-box">
-            <div className="stats-title">Prediction Statistics</div>
-            <div className="stats-row">
-              <span className="stats-label">Mean Probability:</span>
-              <span className="stats-value">
-                {(statistics.meanProbability * 100).toFixed(2)}%
-              </span>
-            </div>
-            <div className="stats-row">
-              <span className="stats-label">95% CI:</span>
-              <span className="stats-value">
-                [{(statistics.confidenceInterval.lower * 100).toFixed(2)}%,{" "}
-                {(statistics.confidenceInterval.upper * 100).toFixed(2)}%]
-              </span>
-            </div>
-            {statistics.maxProbability !== null && (
-              <div className="stats-row">
-                <span className="stats-label">Max Probability:</span>
-                <span className="stats-value">
-                  {(statistics.maxProbability * 100).toFixed(2)}%
-                </span>
-              </div>
-            )}
-            {statistics.positivePixels !== null && (
-              <div className="stats-row">
-                <span className="stats-label">Positive Pixels:</span>
-                <span className="stats-value">
-                  {statistics.positivePixels} / {statistics.totalPixels}
-                </span>
-              </div>
-            )}
-            <div className="stats-row">
-              <span className="stats-label">Precision:</span>
-              <span className="stats-value">
-                {(statistics.precision * 100).toFixed(2)}%
-              </span>
-            </div>
-            <div className="stats-row">
-              <span className="stats-label">Recall:</span>
-              <span className="stats-value">
-                {(statistics.recall * 100).toFixed(2)}%
-              </span>
-            </div>
-            <div className="stats-row">
-              <span className="stats-label">F1 Score:</span>
-              <span className="stats-value">
-                {(statistics.f1 * 100).toFixed(2)}%
-              </span>
-            </div>
-            {/* <div className="stats-row">
-              <span className="stats-label">Accuracy:</span>
-              <span className="stats-value">
-                {(statistics.accuracy * 100).toFixed(2)}%
-              </span>
-            </div> */}
-          </div>
-        )}
-      </div>
-
-      {hasTimeSeries && isTimeScaleOpen && (
-        <div
-          className={`time-scale-popup app-overlay${
-            isDraggingTimeScale ? " dragging" : ""
-          }`}
-          style={{
-            transform: `translate(${timeScaleOffset.x}px, ${timeScaleOffset.y}px)`,
-          }}
-        >
-          <div
-            className="time-scale-header"
-            onPointerDown={handleTimeScaleDragStart}
-            onPointerMove={handleTimeScaleDragMove}
-            onPointerUp={handleTimeScaleDragEnd}
-            onPointerCancel={handleTimeScaleDragEnd}
-            onLostPointerCapture={handleTimeScaleDragEnd}
-          >
-            <span className="time-scale-title">Time Scale:</span>
-            <button
-              type="button"
-              className="time-scale-close"
-              aria-label="Close time scale"
-              onClick={() => setIsTimeScaleOpen(false)}
-            >
-              ×
-            </button>
-          </div>
-
-          <div className="time-scale-current-day">
-            Day {timeIndex + 1} / {timeSeries.length}
-          </div>
-
-          <input
-            id="time-scale-slider"
-            className="time-scale-range"
-            type="range"
-            min={0}
-            max={Math.max(0, timeSeries.length - 1)}
-            value={Math.min(timeIndex, Math.max(0, timeSeries.length - 1))}
-            onChange={(e) => setTimeIndex(Number(e.target.value))}
-            disabled={timeSeries.length <= 1}
-          />
-        </div>
-      )}
-
-      {hasTimeSeries && !isTimeScaleOpen && (
-        <button
-          type="button"
-          className="time-scale-reopen app-overlay"
-          aria-label="Reopen time scale"
-          onClick={() => setIsTimeScaleOpen(true)}
-        >
-          Time Scale
-        </button>
-      )}
-
-      <Map
-        ref={mapRef}
+    <div className="app-shell">
+      <MapView
+        mapRef={mapRef}
         initialViewState={INITIAL_VIEW}
-        onLoad={enableTerrain}
-        mapboxAccessToken={token}
-        mapStyle="mapbox://styles/mapbox/standard-satellite"
-        config={{
-          basemap: {
-            showRoadsAndTransit: false,
-            showPedestrianRoads: false,
-          },
-        }}
-        className="map-container"
-        style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh" }}
-      >
-        {selectedId &&
-          data &&
-          (() => {
-            const current =
-              isPredictionView && timeSeries && timeSeries.length > 0
-                ? timeSeries[timeIndex]
-                : data;
-            return (
-              <Source id="wildfires" type="geojson" data={current}>
-                <Layer {...predictionHeatmapLayer} />
-              </Source>
-            );
-          })()}
-      </Map>
-    </>
+        mapStyle={mapStyle}
+        onOverviewSelect={handleSelectFire}
+        overviewData={overviewData}
+        selectedId={selectedId}
+        selectedFire={selectedFire}
+        basemap={fireBasemap}
+        fireLayers={fireLayers}
+        layerVisibility={layerVisibility}
+      />
+
+      <FilterBar
+        year={year}
+        yearOptions={yearOptions}
+        onYearChange={setYear}
+        threshold={threshold}
+        onThresholdChange={setThreshold}
+        catalogLimit={catalogLimit}
+        onCatalogLimitChange={setCatalogLimit}
+        mapStyle={mapStyle}
+        mapStyles={MAP_STYLES}
+        onMapStyleChange={setMapStyle}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        layerVisibility={layerVisibility}
+        onToggleLayer={handleToggleLayer}
+      />
+
+      <FireListPanel
+        fires={visibleCatalog}
+        selectedId={selectedId}
+        loading={catalogLoading}
+        error={catalogError}
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        page={catalogPage}
+        totalPages={totalPages}
+        onPrevPage={() => setCatalogPage((page) => Math.max(page - 1, 0))}
+        onNextPage={() => setCatalogPage((page) => Math.min(page + 1, totalPages - 1))}
+        onSelectFire={handleSelectFire}
+      />
+
+      <InsightsPanel
+        fire={insightFire}
+        summary={fireSummary}
+        frame={currentFrame}
+        timelineLoading={timelineLoading}
+        layersLoading={layersLoading}
+        layerError={layersError ?? timelineError}
+        overviewCount={filteredCatalog.length}
+      />
+
+      <TimelinePanel
+        timeline={timeline}
+        currentFrame={currentFrame}
+        framePosition={currentFramePosition}
+        onChangePosition={handleTimelineChange}
+        onStep={handleTimelineStep}
+        loading={timelineLoading}
+        error={timelineError}
+      />
+    </div>
   );
 }

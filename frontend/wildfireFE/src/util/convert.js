@@ -134,9 +134,9 @@ function computeMetrics(mask, groundTruth) {
       ? (2 * precision * recall) / (precision + recall)
       : 0;
 
+  const denominator = truePositive + trueNegative + falsePositive + falseNegative;
   const accuracy =
-    truePositive /
-    (truePositive + trueNegative + falsePositive + falseNegative);
+    denominator > 0 ? (truePositive + trueNegative) / denominator : 0;
   return { precision, recall, f1, accuracy };
 }
 

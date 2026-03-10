@@ -2,16 +2,18 @@ from __future__ import annotations
 
 from typing import List
 
-from fastapi import Depends, FastAPI, Query
+from fastapi import FastAPI, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 
 from wildfire_api import WildfireService, get_settings
 from wildfire_api.graphql_schema import build_graphql_router
 from wildfire_api.schemas import (
+    FireLayersResponse,
     HealthResponse,
     SpreadRequest,
     SpreadResponse,
+    TimelineResponse,
     WildfireSummary,
 )
 
@@ -50,6 +52,19 @@ def create_app() -> FastAPI:
         entries = await run_in_threadpool(service.catalog, year, limit, offset)
         return [WildfireSummary.from_metadata(meta) for meta in entries]
 
+    @app.get("/overview", response_model=List[WildfireSummary])
+    async def overview(
+        year: int | None = Query(None, description="Year to read from"),
+        limit: int = Query(200, ge=1, le=1000),
+        offset: int = Query(0, ge=0),
+    ) -> List[WildfireSummary]:
+        entries = await run_in_threadpool(service.overview, year, limit, offset)
+        return [WildfireSummary.from_metadata(meta) for meta in entries]
+
+    @app.get("/years", response_model=List[int])
+    async def years() -> List[int]:
+        return await run_in_threadpool(service.available_years)
+
     @app.post("/findSpread", response_model=SpreadResponse)
     async def find_spread(request: SpreadRequest) -> SpreadResponse:
         prediction, geojson = await run_in_threadpool(
@@ -60,6 +75,34 @@ def create_app() -> FastAPI:
             request.threshold,
         )
         return SpreadResponse.from_prediction(prediction, geojson)
+
+    @app.get("/fires/{fire_id}/timeline", response_model=TimelineResponse)
+    async def fire_timeline(
+        fire_id: str,
+        year: int | None = Query(None, description="Year to read from"),
+    ) -> TimelineResponse:
+        metadata, frames, default_sample_index = await run_in_threadpool(
+            service.timeline,
+            fire_id,
+            year,
+        )
+        return TimelineResponse.from_metadata(metadata, frames, default_sample_index)
+
+    @app.get("/fires/{fire_id}/layers", response_model=FireLayersResponse)
+    async def fire_layers(
+        fire_id: str,
+        year: int | None = Query(None, description="Year to read from"),
+        sample_index: int | None = Query(None, alias="sampleIndex", ge=0),
+        threshold: float | None = Query(None, ge=0.0, le=1.0),
+    ) -> FireLayersResponse:
+        prediction, geojson, layers = await run_in_threadpool(
+            service.find_layers,
+            fire_id,
+            year,
+            sample_index,
+            threshold,
+        )
+        return FireLayersResponse.from_prediction(prediction, geojson, layers)
 
     return app
 

@@ -137,3 +137,109 @@ export const predictionExtrusionLayer = {
     "fill-extrusion-opacity": 0.82,
   },
 };
+
+export const overviewCircleLayer = {
+  id: "overview-fires",
+  type: "circle",
+  paint: {
+    "circle-radius": [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      3,
+      4,
+      8,
+      7,
+      12,
+      10,
+    ],
+    "circle-color": [
+      "interpolate",
+      ["linear"],
+      ["coalesce", ["get", "samples"], 0],
+      0,
+      "#3b82f6",
+      3,
+      "#f59e0b",
+      8,
+      "#ef4444",
+    ],
+    "circle-stroke-width": 1.5,
+    "circle-stroke-color": "rgba(255,255,255,0.7)",
+    "circle-opacity": 0.9,
+  },
+};
+
+export const overviewSelectedCircleLayer = {
+  id: "overview-fires-selected",
+  type: "circle",
+  paint: {
+    "circle-radius": [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      3,
+      7,
+      8,
+      11,
+      12,
+      14,
+    ],
+    "circle-color": "#ffffff",
+    "circle-stroke-width": 2,
+    "circle-stroke-color": "#2563eb",
+    "circle-opacity": 0.95,
+  },
+};
+
+export const differenceCircleLayer = {
+  id: "wildfire-difference-circles",
+  type: "circle",
+  paint: {
+    "circle-radius": [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      5,
+      2,
+      10,
+      4,
+      14,
+      7,
+    ],
+    "circle-color": [
+      "match",
+      ["get", "outcome"],
+      "true_positive",
+      "#22c55e",
+      "false_positive",
+      "#f97316",
+      "false_negative",
+      "#ef4444",
+      "#94a3b8",
+    ],
+    "circle-opacity": 0.9,
+  },
+};
+
+export const extentLineLayer = {
+  id: "wildfire-extent-line",
+  type: "line",
+  paint: {
+    "line-color": "#f8fafc",
+    "line-width": 2,
+    "line-opacity": 0.8,
+    "line-dasharray": [2, 1],
+  },
+};
+
+export const originCircleLayer = {
+  id: "wildfire-origin-circle",
+  type: "circle",
+  paint: {
+    "circle-radius": 6,
+    "circle-color": "#ffffff",
+    "circle-stroke-width": 2,
+    "circle-stroke-color": "#0ea5e9",
+  },
+};
