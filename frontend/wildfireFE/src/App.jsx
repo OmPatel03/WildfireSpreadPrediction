@@ -18,7 +18,9 @@ const LAYER_LABELS = {
   prediction: "Prediction",
   groundTruth: "Ground truth",
 };
+const DAYS_COUNT = 7; // number of fake days to generate for time-series slider
 const INITIAL_VIEW = { longitude: -100, latitude: 40, zoom: 3.5 };
+const DEFAULT_TIME_SCALE_OFFSET = { x: 0, y: 0 };
 
 async function fetchJson(url, options = {}) {
   const headers = {
@@ -33,6 +35,14 @@ async function fetchJson(url, options = {}) {
 export default function App() {
   const mapRef = useRef(null);
   const pendingSpreadRequestRef = useRef(0);
+  const timeScaleDragStateRef = useRef({
+    isDragging: false,
+    pointerId: null,
+    startX: 0,
+    startY: 0,
+    startOffsetX: 0,
+    startOffsetY: 0,
+  });
 
   const [catalog, setCatalog] = useState([]);
   const [catalogPage, setCatalogPage] = useState(0);
@@ -41,6 +51,13 @@ export default function App() {
 
   const [selectedId, setSelectedId] = useState(null);
   const [layerData, setLayerData] = useState(null);
+  const [timeSeries, setTimeSeries] = useState(null);
+  const [timeIndex, setTimeIndex] = useState(0);
+  const [isTimeScaleOpen, setIsTimeScaleOpen] = useState(false);
+  const [timeScaleOffset, setTimeScaleOffset] = useState(
+    DEFAULT_TIME_SCALE_OFFSET
+  );
+  const [isDraggingTimeScale, setIsDraggingTimeScale] = useState(false);
   const [activeLayerIndex, setActiveLayerIndex] = useState(0);
   const [data, setData] = useState(null);
 
@@ -116,6 +133,64 @@ export default function App() {
     () => LAYER_SEQUENCE.filter((key) => layerData?.[key]),
     [layerData]
   );
+  const hasTimeSeries = (timeSeries?.length ?? 0) > 0;
+
+  const resetTimeScalePopupPosition = () => {
+    setTimeScaleOffset(DEFAULT_TIME_SCALE_OFFSET);
+    setIsDraggingTimeScale(false);
+    const drag = timeScaleDragStateRef.current;
+    drag.isDragging = false;
+    drag.pointerId = null;
+  };
+
+  const handleTimeScaleDragStart = (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+
+    const target = event.target;
+    if (
+      target &&
+      typeof target.closest === "function" &&
+      target.closest(".time-scale-close")
+    ) {
+      return;
+    }
+
+    const drag = timeScaleDragStateRef.current;
+    drag.isDragging = true;
+    drag.pointerId = event.pointerId;
+    drag.startX = event.clientX;
+    drag.startY = event.clientY;
+    drag.startOffsetX = timeScaleOffset.x;
+    drag.startOffsetY = timeScaleOffset.y;
+
+    setIsDraggingTimeScale(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const handleTimeScaleDragMove = (event) => {
+    const drag = timeScaleDragStateRef.current;
+    if (!drag.isDragging || drag.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+    setTimeScaleOffset({
+      x: drag.startOffsetX + deltaX,
+      y: drag.startOffsetY + deltaY,
+    });
+  };
+
+  const handleTimeScaleDragEnd = (event) => {
+    const drag = timeScaleDragStateRef.current;
+    if (drag.pointerId !== event.pointerId) return;
+
+    drag.isDragging = false;
+    drag.pointerId = null;
+    setIsDraggingTimeScale(false);
+
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
 
   useEffect(() => {
     if (!layerData || dayKeys.length === 0) {
@@ -258,6 +333,45 @@ export default function App() {
       setLayerData(nextLayerData);
       setActiveLayerIndex(0);
 
+      // Generate a fake time-series (DAYS_COUNT) for the prediction layer by
+      // scaling the magnitude across days so the fire appears to grow/shrink.
+      // We'll only create a series for the "prediction" features to keep this
+      // lightweight. Each element is a GeoJSON FeatureCollection.
+      try {
+        const baseFeatures = predictionFeatures || [];
+        const series = [];
+        for (let d = 0; d < DAYS_COUNT; d++) {
+          const t = (d + 1) / DAYS_COUNT; // progression 0..1
+          const features = baseFeatures.map((f) => {
+            // shallow clone feature and properties
+            const nf = {
+              type: f.type,
+              geometry: f.geometry,
+              properties: { ...f.properties },
+            };
+            // scale mag so early days are small and later days grow
+            const baseMag = Number(f.properties?.mag ?? 0);
+            // apply growth curve with a small random jitter so frames look natural
+            const jitter = (Math.random() - 0.5) * 0.08 * baseMag;
+            nf.properties.mag = Math.max(0, baseMag * (0.25 + 0.75 * t) + jitter);
+            return nf;
+          });
+
+          series.push({ type: "FeatureCollection", features });
+        }
+
+        setTimeSeries(series);
+        setTimeIndex(0);
+        resetTimeScalePopupPosition();
+        setIsTimeScaleOpen(true);
+      } catch {
+        // if generation fails, clear timeSeries so original single-frame rendering stays
+        setTimeSeries(null);
+        setTimeIndex(0);
+        resetTimeScalePopupPosition();
+        setIsTimeScaleOpen(false);
+      }
+
       // Calculate statistics including confidence interval
       if (meanProbability !== null) {
         // Calculate standard error and 95% confidence interval
@@ -322,6 +436,10 @@ export default function App() {
       setData(null);
       setStatistics(null);
       setSpreadError(error.message ?? "Unable to load fire spread");
+      setTimeSeries(null);
+      setTimeIndex(0);
+      resetTimeScalePopupPosition();
+      setIsTimeScaleOpen(false);
       console.error("findSpread error:", error);
     } finally {
       if (pendingSpreadRequestRef.current === requestId) {
@@ -339,6 +457,10 @@ export default function App() {
       setData(null);
       setStatistics(null);
       setSpreadError(null);
+      setTimeSeries(null);
+      setTimeIndex(0);
+      resetTimeScalePopupPosition();
+      setIsTimeScaleOpen(false);
       return;
     }
 
@@ -356,6 +478,58 @@ export default function App() {
   const nextDay = () => {
     if (dayKeys.length === 0) return;
     setActiveLayerIndex((index) => (index + 1) % dayKeys.length);
+  };
+
+  // Generate a demo time-series (client-side fake data) for testing the slider
+  const generateDemoTimeSeries = (
+    centerLat = INITIAL_VIEW.latitude,
+    centerLon = INITIAL_VIEW.longitude,
+    points = 800
+  ) => {
+    try {
+      const bases = Array.from({ length: points }, () => {
+        // random polar distribution around center
+        const angle = Math.random() * Math.PI * 2;
+        const radius = Math.random() * 0.12; // degrees (small area)
+        const lat = centerLat + Math.cos(angle) * radius;
+        const lon = centerLon + Math.sin(angle) * radius;
+        const baseMag = Math.random() * 5 + 0.05; // map heat range (0..6)
+        const jitter = (Math.random() - 0.5) * 0.2;
+        return { lat, lon, baseMag, jitter };
+      });
+
+      const series = [];
+      for (let d = 0; d < DAYS_COUNT; d++) {
+        const t = (d + 1) / DAYS_COUNT; // progression 0..1
+        const features = bases.map((p) => ({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [p.lon, p.lat] },
+          properties: {
+            mag: Math.max(0, p.baseMag * (0.25 + 0.75 * t) + p.jitter),
+            lat: p.lat,
+          },
+        }));
+        series.push({ type: "FeatureCollection", features });
+      }
+
+      setTimeSeries(series);
+      setTimeIndex(0);
+      resetTimeScalePopupPosition();
+      setIsTimeScaleOpen(true);
+      // show demo as selected so the UI will render the source
+      setSelectedId("demo");
+      setData(series[0]);
+      // fly to demo center for convenience
+      if (mapRef.current) {
+        mapRef.current.flyTo({ center: [centerLon, centerLat], zoom: 9 });
+      }
+    } catch (err) {
+      console.error("demo generation failed", err);
+      setTimeSeries(null);
+      setTimeIndex(0);
+      resetTimeScalePopupPosition();
+      setIsTimeScaleOpen(false);
+    }
   };
 
   return (
@@ -447,6 +621,17 @@ export default function App() {
           </button>
         </div>
 
+        <div className="control">
+          <button
+            type="button"
+            className="dropdown-select"
+            onClick={() => generateDemoTimeSeries()}
+            title="Generate demo multi-day data for the slider"
+          >
+            Load demo time-series
+          </button>
+        </div>
+
         {spreadLoading && (
           <span className="status-text">Loading fire spread…</span>
         )}
@@ -508,6 +693,62 @@ export default function App() {
         )}
       </div>
 
+      {hasTimeSeries && isTimeScaleOpen && (
+        <div
+          className={`time-scale-popup app-overlay${
+            isDraggingTimeScale ? " dragging" : ""
+          }`}
+          style={{
+            transform: `translate(${timeScaleOffset.x}px, ${timeScaleOffset.y}px)`,
+          }}
+        >
+          <div
+            className="time-scale-header"
+            onPointerDown={handleTimeScaleDragStart}
+            onPointerMove={handleTimeScaleDragMove}
+            onPointerUp={handleTimeScaleDragEnd}
+            onPointerCancel={handleTimeScaleDragEnd}
+            onLostPointerCapture={handleTimeScaleDragEnd}
+          >
+            <span className="time-scale-title">Time Scale:</span>
+            <button
+              type="button"
+              className="time-scale-close"
+              aria-label="Close time scale"
+              onClick={() => setIsTimeScaleOpen(false)}
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="time-scale-current-day">
+            Day {timeIndex + 1} / {timeSeries.length}
+          </div>
+
+          <input
+            id="time-scale-slider"
+            className="time-scale-range"
+            type="range"
+            min={0}
+            max={Math.max(0, timeSeries.length - 1)}
+            value={Math.min(timeIndex, Math.max(0, timeSeries.length - 1))}
+            onChange={(e) => setTimeIndex(Number(e.target.value))}
+            disabled={timeSeries.length <= 1}
+          />
+        </div>
+      )}
+
+      {hasTimeSeries && !isTimeScaleOpen && (
+        <button
+          type="button"
+          className="time-scale-reopen app-overlay"
+          aria-label="Reopen time scale"
+          onClick={() => setIsTimeScaleOpen(true)}
+        >
+          Time Scale
+        </button>
+      )}
+
       <Map
         ref={mapRef}
         initialViewState={INITIAL_VIEW}
@@ -517,9 +758,14 @@ export default function App() {
         style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh" }}
       >
         {selectedId && data && (
-          <Source id="wildfires" type="geojson" data={data}>
-            <Layer {...heatmapLayer} />
-          </Source>
+          (() => {
+            const current = timeSeries && timeSeries.length > 0 ? timeSeries[timeIndex] : data;
+            return (
+              <Source id="wildfires" type="geojson" data={current}>
+                <Layer {...heatmapLayer} />
+              </Source>
+            );
+          })()
         )}
       </Map>
     </>
