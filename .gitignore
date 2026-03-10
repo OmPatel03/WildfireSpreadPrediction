@@ -10,7 +10,7 @@ __pycache__
 /src/wsts/inference_visualization
 /src/wsts/inference_visualization/*.png
 /backend/resources
-/src/wsts/table2_eval_domain_adversarial
+src/wsts/table2_eval_domain_adversarial
 
 **/*.env
 **/*.local.env
