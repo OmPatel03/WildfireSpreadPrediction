@@ -18,6 +18,24 @@ const GROUND_TRUTH_HEAT_GRADIENT = {
   0.7: "#0ea5e9",
   1.0: "#075985",
 };
+const TRUE_POSITIVE_HEAT_GRADIENT = {
+  0.2: "#86efac",
+  0.45: "#4ade80",
+  0.7: "#22c55e",
+  1.0: "#166534",
+};
+const FALSE_POSITIVE_HEAT_GRADIENT = {
+  0.2: "#fdba74",
+  0.45: "#fb923c",
+  0.7: "#f97316",
+  1.0: "#9a3412",
+};
+const FALSE_NEGATIVE_HEAT_GRADIENT = {
+  0.2: "#fca5a5",
+  0.45: "#f87171",
+  0.7: "#ef4444",
+  1.0: "#991b1b",
+};
 
 function buildSelectedExtentGeojson(selectedFire) {
   const bbox = selectedFire?.bbox;
@@ -93,30 +111,6 @@ function getOverviewLayerOptions(selectedId, onOverviewSelect) {
       layer.on("click", () => {
         const fireId = feature?.properties?.fireId;
         if (fireId) onOverviewSelect(fireId);
-      });
-    },
-  };
-}
-
-function getDifferenceOptions() {
-  return {
-    pointToLayer: (feature, latlng) => {
-      const outcome = feature?.properties?.outcome;
-      const color =
-        outcome === "true_positive"
-          ? "#22c55e"
-          : outcome === "false_positive"
-            ? "#f97316"
-            : outcome === "false_negative"
-              ? "#ef4444"
-              : "#94a3b8";
-      return L.circleMarker(latlng, {
-        radius: 4,
-        fillColor: color,
-        color,
-        weight: 1,
-        opacity: 0.9,
-        fillOpacity: 0.8,
       });
     },
   };
@@ -230,6 +224,24 @@ export default function MapView({
         .filter(Boolean),
     [fireLayers],
   );
+  const differenceHeatGroups = useMemo(() => {
+    const groups = {
+      true_positive: [],
+      false_positive: [],
+      false_negative: [],
+    };
+
+    (fireLayers?.differenceHeatmap?.features ?? []).forEach((feature) => {
+      const [lon, lat] = feature?.geometry?.coordinates ?? [];
+      const outcome = feature?.properties?.outcome;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || !groups[outcome]) {
+        return;
+      }
+      groups[outcome].push([lat, lon, 1]);
+    });
+
+    return groups;
+  }, [fireLayers]);
   const overviewOptions = useMemo(
     () => getOverviewLayerOptions(selectedId, onOverviewSelect),
     [onOverviewSelect, selectedId],
@@ -284,8 +296,37 @@ export default function MapView({
         <GeoJSON data={fireLayers.predictionPolygons} {...getPredictionPolygonOptions()} />
       ) : null}
 
-      {fireLayers?.differenceHeatmap && layerVisibility.differenceHeatmap ? (
-        <GeoJSON data={fireLayers.differenceHeatmap} {...getDifferenceOptions()} />
+      {layerVisibility.differenceHeatmap && differenceHeatGroups.true_positive.length > 0 ? (
+        <HeatmapLayer
+          points={differenceHeatGroups.true_positive}
+          radius={18}
+          blur={26}
+          maxZoom={18}
+          minOpacity={0.9}
+          gradient={TRUE_POSITIVE_HEAT_GRADIENT}
+        />
+      ) : null}
+
+      {layerVisibility.differenceHeatmap && differenceHeatGroups.false_positive.length > 0 ? (
+        <HeatmapLayer
+          points={differenceHeatGroups.false_positive}
+          radius={18}
+          blur={26}
+          maxZoom={18}
+          minOpacity={0.9}
+          gradient={FALSE_POSITIVE_HEAT_GRADIENT}
+        />
+      ) : null}
+
+      {layerVisibility.differenceHeatmap && differenceHeatGroups.false_negative.length > 0 ? (
+        <HeatmapLayer
+          points={differenceHeatGroups.false_negative}
+          radius={18}
+          blur={26}
+          maxZoom={18}
+          minOpacity={0.9}
+          gradient={FALSE_NEGATIVE_HEAT_GRADIENT}
+        />
       ) : null}
 
       {fireLayers?.extent && layerVisibility.extent ? (

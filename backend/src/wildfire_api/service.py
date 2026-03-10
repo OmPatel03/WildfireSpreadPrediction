@@ -8,10 +8,27 @@ import torch
 from .config import Settings, get_settings
 from .domain import SpreadPrediction
 from .gee_basemap import build_fire_basemap
-from .geojson import build_geojson, build_layer_collection
+from .geojson import build_geojson, build_layer_collection, build_model_input_layer_collection
 from .model_loader import get_model
 from .preprocessing import PreprocessedSample, SamplePreprocessor
 from .repository import WildfireMetadata, WildfireRepository
+
+
+SCALABLE_ENVIRONMENT_CHANNELS = {
+    "viirs_m11": 0,
+    "viirs_i2": 1,
+    "ndvi": 3,
+    "evi2": 4,
+    "precip": 5,
+    "wind_speed": 6,
+}
+
+MODEL_INPUT_CHANNELS = {
+    **SCALABLE_ENVIRONMENT_CHANNELS,
+    "slope": 12,
+    "aspect": 13,
+    "elevation": 14,
+}
 
 
 class WildfireService:
@@ -92,10 +109,16 @@ class WildfireService:
         year: Optional[int] = None,
         sample_offset: int = -1,
         threshold: Optional[float] = None,
+        environment_scales: Optional[Dict[str, float]] = None,
     ) -> Tuple[SpreadPrediction, Dict]:
         target_year = year or self._settings.default_year
         cube = self._repository.load_cube(fire_id, target_year)
-        processed = self._preprocessor.prepare(cube.cube, sample_offset=sample_offset)
+        prepared_cube = self._apply_environment_scales(
+            cube.cube,
+            sample_offset,
+            environment_scales,
+        )
+        processed = self._preprocessor.prepare(prepared_cube, sample_offset=sample_offset)
         probs = self._infer(processed)
         mask_threshold = threshold if threshold is not None else self._settings.probability_threshold
         mask = (probs >= mask_threshold).astype(np.uint8)
@@ -125,15 +148,36 @@ class WildfireService:
         year: Optional[int] = None,
         sample_index: Optional[int] = None,
         threshold: Optional[float] = None,
+        model_input: Optional[str] = None,
+        environment_scales: Optional[Dict[str, float]] = None,
     ) -> Tuple[SpreadPrediction, Dict, Dict]:
+        _ = model_input
         resolved_sample = -1 if sample_index is None else sample_index
+        target_year = year or self._settings.default_year
+        cube = self._repository.load_cube(fire_id, target_year)
+        prepared_cube = self._apply_environment_scales(
+            cube.cube,
+            resolved_sample,
+            environment_scales,
+        )
         prediction, geojson = self.find_spread(
             fire_id=fire_id,
             year=year,
             sample_offset=resolved_sample,
             threshold=threshold,
+            environment_scales=environment_scales,
         )
         layers = build_layer_collection(prediction)
+        model_input_arrays = self._extract_model_input_arrays(
+            prepared_cube,
+            prediction.sample_index,
+            prediction.probabilities.shape,
+            list(MODEL_INPUT_CHANNELS.keys()),
+        )
+        layers["modelInputs"] = build_model_input_layer_collection(
+            prediction,
+            model_input_arrays,
+        )
         layers["basemap"] = build_fire_basemap(
             prediction.metadata,
             prediction.target_date,
@@ -161,3 +205,61 @@ class WildfireService:
         if 0 <= idx < len(img_dates):
             return img_dates[idx]
         return None
+
+    def _resolve_sample_index(self, sample_offset: int, total_samples: int) -> int:
+        offset = sample_offset
+        if offset < 0:
+            offset = total_samples + offset
+        if offset < 0 or offset >= total_samples:
+            raise IndexError(f"Sample offset {offset} outside range [0, {total_samples - 1}]")
+        return offset
+
+    def _apply_environment_scales(
+        self,
+        cube: np.ndarray,
+        sample_offset: int,
+        environment_scales: Optional[Dict[str, float]],
+    ) -> np.ndarray:
+        if not environment_scales:
+            return cube
+
+        leads = self._settings.n_leading_observations
+        total_samples = cube.shape[0] - leads
+        sample_index = self._resolve_sample_index(sample_offset, total_samples)
+        start = sample_index
+        end = min(start + leads, cube.shape[0])
+        scaled_cube = np.copy(cube)
+
+        for key, channel_idx in SCALABLE_ENVIRONMENT_CHANNELS.items():
+            factor = float(environment_scales.get(key, 1.0))
+            if abs(factor - 1.0) < 1e-6:
+                continue
+            scaled_cube[start:end, channel_idx, ...] = (
+                scaled_cube[start:end, channel_idx, ...] * factor
+            )
+
+        return scaled_cube
+
+    def _extract_model_input_arrays(
+        self,
+        cube: np.ndarray,
+        sample_index: int,
+        spatial_shape: Tuple[int, int],
+        keys: List[str],
+    ) -> Dict[str, np.ndarray]:
+        leads = self._settings.n_leading_observations
+        frame_index = min(sample_index + max(leads - 1, 0), cube.shape[0] - 1)
+        raw_frame = cube[frame_index]
+        target_h, target_w = spatial_shape
+        _, height, width = raw_frame.shape
+        h_off = max((height - target_h) // 2, 0)
+        w_off = max((width - target_w) // 2, 0)
+        cropped = raw_frame[:, h_off:h_off + target_h, w_off:w_off + target_w]
+
+        arrays: Dict[str, np.ndarray] = {}
+        for key in keys:
+            channel_idx = MODEL_INPUT_CHANNELS.get(key)
+            if channel_idx is None:
+                continue
+            arrays[key] = np.asarray(cropped[channel_idx], dtype=np.float32)
+        return arrays

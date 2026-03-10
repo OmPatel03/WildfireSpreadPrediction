@@ -10,6 +10,17 @@ from .domain import SpreadPrediction
 
 LAT_STEP = 1 / 296
 COLUMN_WIDTH_METERS = 375
+MODEL_INPUT_CHANNELS = {
+    "viirs_m11": {"label": "VIIRS M11"},
+    "viirs_i2": {"label": "VIIRS I2"},
+    "ndvi": {"label": "NDVI"},
+    "evi2": {"label": "EVI2"},
+    "precip": {"label": "Precipitation"},
+    "wind_speed": {"label": "Wind speed"},
+    "elevation": {"label": "Elevation"},
+    "slope": {"label": "Slope"},
+    "aspect": {"label": "Aspect"},
+}
 
 
 def _safe_longitude_step(latitude: float) -> float:
@@ -254,7 +265,49 @@ def build_layer_collection(prediction: SpreadPrediction) -> Dict[str, Any]:
         },
         "extent": extent,
         "origin": origin,
+        "modelInputs": {},
     }
+
+
+def build_model_input_layer_collection(
+    prediction: SpreadPrediction,
+    model_inputs: Dict[str, np.ndarray],
+) -> Dict[str, Any]:
+    collections: Dict[str, Any] = {}
+
+    for key, array in model_inputs.items():
+        if key not in MODEL_INPUT_CHANNELS:
+            continue
+
+        arr = np.asarray(array, dtype=np.float32)
+        if arr.ndim != 2:
+            continue
+
+        finite_mask = np.isfinite(arr)
+        if not finite_mask.any():
+            collections[key] = {
+                "label": MODEL_INPUT_CHANNELS[key]["label"],
+                "height": int(arr.shape[0]),
+                "width": int(arr.shape[1]),
+                "raster": arr.tolist(),
+                "min": None,
+                "max": None,
+                "mean": None,
+            }
+            continue
+
+        finite_values = arr[finite_mask]
+        collections[key] = {
+            "label": MODEL_INPUT_CHANNELS[key]["label"],
+            "height": int(arr.shape[0]),
+            "width": int(arr.shape[1]),
+            "raster": arr.tolist(),
+            "min": float(np.min(finite_values)),
+            "max": float(np.max(finite_values)),
+            "mean": float(np.mean(finite_values)),
+        }
+
+    return collections
 
 
 def build_geojson(prediction: SpreadPrediction) -> Dict[str, Any]:

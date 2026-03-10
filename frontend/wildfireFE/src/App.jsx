@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
 import "./App.css";
 import FilterBar from "./components/FilterBar";
+import EnvironmentPanel from "./components/EnvironmentPanel";
 import FireListPanel from "./components/FireListPanel";
 import InsightsPanel from "./components/InsightsPanel";
 import MapView from "./components/MapView";
+import ModelInputsPanel from "./components/ModelInputsPanel";
 import TimelinePanel from "./components/TimelinePanel";
 import { fetchLayers, fetchOverview, fetchTimeline, fetchYears } from "./util/api.js";
 import { annotateCatalogWithLocations } from "./util/geocode.js";
@@ -29,6 +31,14 @@ const MAP_STYLES = [
 ];
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN ?? "";
 const FALLBACK_YEAR_OPTIONS = [DEFAULT_YEAR];
+const DEFAULT_ENVIRONMENT_SCALES = {
+  viirs_m11: 1,
+  viirs_i2: 1,
+  ndvi: 1,
+  evi2: 1,
+  precip: 1,
+  wind_speed: 1,
+};
 const DEFAULT_LAYER_VISIBILITY = {
   overview: true,
   predictionHeatmap: true,
@@ -94,6 +104,9 @@ export default function App() {
   const [sampleIndex, setSampleIndex] = useState(null);
   const [viewMode, setViewMode] = useState("2d");
   const [mapStyle, setMapStyle] = useState(MAP_STYLES[0].value);
+  const [modelInputsOpen, setModelInputsOpen] = useState(false);
+  const [environmentOpen, setEnvironmentOpen] = useState(false);
+  const [environmentScales, setEnvironmentScales] = useState(DEFAULT_ENVIRONMENT_SCALES);
   const [layerVisibility, setLayerVisibility] = useState(
     DEFAULT_LAYER_VISIBILITY,
   );
@@ -112,6 +125,7 @@ export default function App() {
 
   const debouncedThreshold = useDebouncedValue(threshold, 350);
   const debouncedSampleIndex = useDebouncedValue(sampleIndex, 200);
+  const debouncedEnvironmentScales = useDebouncedValue(environmentScales, 300);
 
   useEffect(() => {
     let ignore = false;
@@ -310,6 +324,7 @@ export default function App() {
           selectedId,
           debouncedSampleIndex,
           debouncedThreshold,
+          JSON.stringify(debouncedEnvironmentScales),
         ].join(":");
         const payload = layersCacheRef.current.get(layerCacheKey)
           ?? await fetchLayers({
@@ -317,6 +332,7 @@ export default function App() {
             year,
             sampleIndex: debouncedSampleIndex,
             threshold: debouncedThreshold,
+            environmentScales: debouncedEnvironmentScales,
             signal: controller.signal,
           });
         layersCacheRef.current.set(layerCacheKey, payload);
@@ -339,7 +355,7 @@ export default function App() {
       ignore = true;
       controller.abort();
     };
-  }, [debouncedSampleIndex, debouncedThreshold, selectedId, year]);
+  }, [debouncedEnvironmentScales, debouncedSampleIndex, debouncedThreshold, selectedId, year]);
 
   useEffect(() => {
     if (!selectedFire || !mapRef.current) return;
@@ -465,6 +481,17 @@ export default function App() {
     setSelectedId(fireId);
   };
 
+  const handleEnvironmentScaleChange = (key, value) => {
+    setEnvironmentScales((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  };
+
+  const handleResetEnvironment = () => {
+    setEnvironmentScales(DEFAULT_ENVIRONMENT_SCALES);
+  };
+
   const handleTimelineStep = (step) => {
     const frames = timeline?.frames ?? [];
     if (!frames.length) return;
@@ -520,10 +547,26 @@ export default function App() {
         mapStyle={mapStyle}
         mapStyles={MAP_STYLES}
         onMapStyleChange={setMapStyle}
+        modelInputsOpen={modelInputsOpen}
+        onToggleModelInputs={() => setModelInputsOpen((open) => !open)}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         layerVisibility={layerVisibility}
         onToggleLayer={handleToggleLayer}
+        environmentOpen={environmentOpen}
+        onToggleEnvironment={() => setEnvironmentOpen((open) => !open)}
+      />
+
+      <ModelInputsPanel
+        isOpen={modelInputsOpen}
+        modelInputs={layersResponse?.layers?.modelInputs}
+      />
+
+      <EnvironmentPanel
+        isOpen={environmentOpen}
+        scales={environmentScales}
+        onScaleChange={handleEnvironmentScaleChange}
+        onReset={handleResetEnvironment}
       />
 
       <FireListPanel

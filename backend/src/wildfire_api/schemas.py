@@ -168,6 +168,7 @@ class FireLayers(BaseModel):
     difference_heatmap: Dict[str, Any] = Field(alias="differenceHeatmap")
     extent: Dict[str, Any]
     origin: Dict[str, Any]
+    model_inputs: Dict[str, Any] = Field(default_factory=dict, alias="modelInputs")
 
     class Config:
         populate_by_name = True

@@ -94,6 +94,13 @@ def create_app() -> FastAPI:
         year: int | None = Query(None, description="Year to read from"),
         sample_index: int | None = Query(None, alias="sampleIndex", ge=0),
         threshold: float | None = Query(None, ge=0.0, le=1.0),
+        model_input: str | None = Query(None, alias="modelInput"),
+        viirs_m11_scale: float = Query(1.0, alias="viirsM11Scale", ge=0.5, le=2.0),
+        viirs_i2_scale: float = Query(1.0, alias="viirsI2Scale", ge=0.5, le=2.0),
+        ndvi_scale: float = Query(1.0, alias="ndviScale", ge=0.5, le=2.0),
+        evi2_scale: float = Query(1.0, alias="evi2Scale", ge=0.5, le=2.0),
+        precip_scale: float = Query(1.0, alias="precipScale", ge=0.5, le=2.0),
+        wind_speed_scale: float = Query(1.0, alias="windSpeedScale", ge=0.5, le=2.0),
     ) -> FireLayersResponse:
         prediction, geojson, layers = await run_in_threadpool(
             service.find_layers,
@@ -101,6 +108,15 @@ def create_app() -> FastAPI:
             year,
             sample_index,
             threshold,
+            model_input,
+            {
+                "viirs_m11": viirs_m11_scale,
+                "viirs_i2": viirs_i2_scale,
+                "ndvi": ndvi_scale,
+                "evi2": evi2_scale,
+                "precip": precip_scale,
+                "wind_speed": wind_speed_scale,
+            },
         )
         return FireLayersResponse.from_prediction(prediction, geojson, layers)
 

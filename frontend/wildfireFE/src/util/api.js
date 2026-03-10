@@ -38,11 +38,18 @@ async function fetchTimeline({ fireId, year, signal }) {
 }
 
 async function fetchLayers({ fireId, year, sampleIndex, threshold, signal }) {
+  const environmentScales = arguments[0]?.environmentScales ?? {};
   return fetchJson(
     buildUrl(`/fires/${fireId}/layers`, {
       year,
       sampleIndex,
       threshold,
+      viirsM11Scale: environmentScales.viirs_m11,
+      viirsI2Scale: environmentScales.viirs_i2,
+      ndviScale: environmentScales.ndvi,
+      evi2Scale: environmentScales.evi2,
+      precipScale: environmentScales.precip,
+      windSpeedScale: environmentScales.wind_speed,
     }),
     { signal },
   );

@@ -19,10 +19,14 @@ export default function FilterBar({
   mapStyle,
   mapStyles,
   onMapStyleChange,
+  modelInputsOpen,
+  onToggleModelInputs,
   viewMode,
   onViewModeChange,
   layerVisibility,
   onToggleLayer,
+  environmentOpen,
+  onToggleEnvironment,
 }) {
   return (
     <div className="top-bar app-overlay">
@@ -85,6 +89,22 @@ export default function FilterBar({
           ))}
         </select>
       </div>
+
+      <button
+        type="button"
+        className={modelInputsOpen ? "control-button active" : "control-button"}
+        onClick={onToggleModelInputs}
+      >
+        Model inputs
+      </button>
+
+      <button
+        type="button"
+        className={environmentOpen ? "control-button active" : "control-button"}
+        onClick={onToggleEnvironment}
+      >
+        Environment
+      </button>
 
       <div className="segmented-control">
         <button
