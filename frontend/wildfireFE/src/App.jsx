@@ -2,9 +2,18 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Map, { Source, Layer } from "react-map-gl/mapbox";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { heatmapLayer } from "./mapLayers";
+import {
+  heatmapLayer,
+  predictionExtrusionLayer,
+  predictionHeatmapLayer,
+} from "./mapLayers";
 import "./App.css";
-import { buildCoordinatesArray, computeMetrics } from "./util/convert.js";
+import { annotateCatalogWithLocations } from "./util/geocode.js";
+import {
+  buildCoordinatesArray,
+  buildExtrusionArray,
+  computeMetrics,
+} from "./util/convert.js";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://wispr.cas.mcmaster.ca/api";
@@ -13,12 +22,22 @@ const MAX_FIRE_COUNT = 60;
 const PAGE_SIZE = 10;
 const SAMPLE_OFFSET = 19;
 const THRESHOLD = 0.5;
-const LAYER_SEQUENCE = ["prediction", "groundTruth"];
+const LAYER_SEQUENCE = ["groundTruth", "prediction"];
 const LAYER_LABELS = {
   prediction: "Prediction",
   groundTruth: "Ground truth",
 };
-const INITIAL_VIEW = { longitude: -100, latitude: 40, zoom: 3.5 };
+const TERRAIN_SOURCE_ID = "mapbox-dem";
+const TERRAIN_EXAGGERATION = 1.2;
+const THREE_D_BEARING = -20;
+const THREE_D_PITCH = 55;
+const INITIAL_VIEW = {
+  longitude: -100,
+  latitude: 40,
+  zoom: 3.5,
+  bearing: THREE_D_BEARING,
+  pitch: 35,
+};
 
 async function fetchJson(url, options = {}) {
   const headers = {
@@ -51,6 +70,25 @@ export default function App() {
   const token = import.meta.env.VITE_MAPBOX_TOKEN;
   if (!token) console.warn("VITE_MAPBOX_TOKEN not set");
 
+  const enableTerrain = () => {
+    const map = mapRef.current?.getMap?.();
+    if (!map) return;
+
+    if (!map.getSource(TERRAIN_SOURCE_ID)) {
+      map.addSource(TERRAIN_SOURCE_ID, {
+        type: "raster-dem",
+        url: "mapbox://mapbox.mapbox-terrain-dem-v1",
+        tileSize: 512,
+        maxzoom: 14,
+      });
+    }
+
+    map.setTerrain({
+      source: TERRAIN_SOURCE_ID,
+      exaggeration: TERRAIN_EXAGGERATION,
+    });
+  };
+
   useEffect(() => {
     let ignore = false;
     const geocodeController = new AbortController();
@@ -76,12 +114,15 @@ export default function App() {
           setCatalogPage(0);
         }
 
+        // reverse rows
+        rows = rows.slice().reverse();
+
         if (token) {
           try {
             const withLocations = await annotateCatalogWithLocations(
               rows,
               token,
-              geocodeController.signal
+              geocodeController.signal,
             );
             if (!ignore) {
               setCatalog(withLocations);
@@ -114,8 +155,13 @@ export default function App() {
 
   const dayKeys = useMemo(
     () => LAYER_SEQUENCE.filter((key) => layerData?.[key]),
-    [layerData]
+    [layerData],
   );
+  const safeActiveLayerIndex = Math.min(
+    activeLayerIndex,
+    Math.max(dayKeys.length - 1, 0),
+  );
+  const activeLayerKey = dayKeys[safeActiveLayerIndex] ?? null;
 
   useEffect(() => {
     if (!layerData || dayKeys.length === 0) {
@@ -209,9 +255,9 @@ export default function App() {
         payload?.metadata?.fire ??
         {};
 
-      const { precision, recall, f1 } = computeMetrics(
+      const { precision, recall, f1, accuracy } = computeMetrics(
         predictionMask,
-        groundTruth
+        groundTruth,
       );
 
       const rows = shape.height ?? fireMeta.height ?? prediction.length ?? 0; // number of rows
@@ -225,19 +271,19 @@ export default function App() {
       const centerLat = fireCenter?.latitude ?? fireMeta.latitude;
       const centerLong = fireCenter?.longitude ?? fireMeta.longitude;
 
-      const [predictionFeatures, predictionPositive] = buildCoordinatesArray(
+      const [predictionFeatures, predictionPositive] = buildExtrusionArray(
         rows,
         cols,
         centerLat,
         centerLong,
-        prediction
+        prediction,
       );
       const [groundTruthFeatures, groundTruthPositive] = buildCoordinatesArray(
         rows,
         cols,
         centerLat,
         centerLong,
-        groundTruth
+        groundTruth,
       );
 
       if (predictionPositive === 0 && groundTruthPositive === 0) {
@@ -280,6 +326,7 @@ export default function App() {
           precision,
           recall,
           f1,
+          accuracy,
         });
       } else {
         setStatistics(null);
@@ -288,20 +335,31 @@ export default function App() {
       const focusSource = predictionFeatures.length
         ? predictionFeatures
         : groundTruthFeatures;
-      const positive = focusSource.filter(
-        (feature) =>
-          (feature?.properties?.mag ?? 0) > 0 &&
-          feature?.geometry?.coordinates?.length === 2
-      );
+      const positive = focusSource
+        .filter((feature) => (feature?.properties?.mag ?? 0) > 0)
+        .map((feature) => ({
+          lon:
+            feature?.properties?.lon ??
+            feature?.geometry?.coordinates?.[0] ??
+            null,
+          lat:
+            feature?.properties?.lat ??
+            feature?.geometry?.coordinates?.[1] ??
+            null,
+        }))
+        .filter(
+          (coord) => Number.isFinite(coord.lon) && Number.isFinite(coord.lat),
+        );
 
       let coords;
       if (positive.length > 0) {
+        console.log(`Focusing map on ${positive.length} positive features`);
+        console.log("all positive features:", positive);
         const total = positive.reduce(
-          (acc, feature) => {
-            const [lon, lat] = feature.geometry.coordinates;
-            return { lat: acc.lat + lat, lon: acc.lon + lon };
+          (acc, coord) => {
+            return { lat: acc.lat + coord.lat, lon: acc.lon + coord.lon };
           },
-          { lat: 0, lon: 0 }
+          { lat: 0, lon: 0 },
         );
         coords = [total.lon / positive.length, total.lat / positive.length];
       } else if (centerLong && centerLat) {
@@ -312,6 +370,8 @@ export default function App() {
         mapRef.current.flyTo({
           center: coords,
           zoom: 9,
+          bearing: THREE_D_BEARING,
+          pitch: THREE_D_PITCH,
           speed: 0.8,
           curve: 1.4,
         });
@@ -349,7 +409,7 @@ export default function App() {
   const prevDay = () => {
     if (dayKeys.length === 0) return;
     setActiveLayerIndex(
-      (index) => (index - 1 + dayKeys.length) % dayKeys.length
+      (index) => (index - 1 + dayKeys.length) % dayKeys.length,
     );
   };
 
@@ -381,7 +441,7 @@ export default function App() {
                   (typeof fire.latitude === "number" &&
                   typeof fire.longitude === "number"
                     ? `${fire.latitude.toFixed(2)}, ${fire.longitude.toFixed(
-                        2
+                        2,
                       )}`
                     : fire.fireId)}
               </option>
@@ -504,6 +564,12 @@ export default function App() {
                 {(statistics.f1 * 100).toFixed(2)}%
               </span>
             </div>
+            {/* <div className="stats-row">
+              <span className="stats-label">Accuracy:</span>
+              <span className="stats-value">
+                {(statistics.accuracy * 100).toFixed(2)}%
+              </span>
+            </div> */}
           </div>
         )}
       </div>
@@ -511,14 +577,21 @@ export default function App() {
       <Map
         ref={mapRef}
         initialViewState={INITIAL_VIEW}
+        onLoad={enableTerrain}
         mapboxAccessToken={token}
-        mapStyle="mapbox://styles/mapbox/dark-v10"
+        mapStyle="mapbox://styles/mapbox/standard-satellite"
+        config={{
+          basemap: {
+            showRoadsAndTransit: false,
+            showPedestrianRoads: false,
+          },
+        }}
         className="map-container"
         style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh" }}
       >
         {selectedId && data && (
           <Source id="wildfires" type="geojson" data={data}>
-            <Layer {...heatmapLayer} />
+            <Layer {...predictionHeatmapLayer} />
           </Source>
         )}
       </Map>
