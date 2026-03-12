@@ -107,7 +107,12 @@ function RasterPreview({ raster, label, min, max, mean }) {
   );
 }
 
-export default function ModelInputsPanel({ isOpen, modelInputs }) {
+export default function ModelInputsPanel({
+  isOpen,
+  modelInputs,
+  collapsed,
+  onToggleCollapse,
+}) {
   const items = useMemo(
     () =>
       INPUT_ORDER.map((key) => ({ key, ...modelInputs?.[key] }))
@@ -118,30 +123,37 @@ export default function ModelInputsPanel({ isOpen, modelInputs }) {
   if (!isOpen) return null;
 
   return (
-    <div className="model-inputs-panel app-overlay">
+    <div className={`model-inputs-panel app-overlay${collapsed ? " is-collapsed" : ""}`}>
       <div className="panel-header compact-panel-header">
         <div>
           <p className="eyebrow">Model inputs</p>
           <h2>Raster previews</h2>
         </div>
+        <button type="button" className="panel-collapse-button" onClick={onToggleCollapse}>
+          {collapsed ? "+" : "×"}
+        </button>
       </div>
 
-      <p className="muted">
-        Notebook-style raster previews for the current fire and frame.
-      </p>
+      {!collapsed && (
+        <>
+          <p className="muted">
+            Notebook-style raster previews for the current fire and frame.
+          </p>
 
-      <div className="input-raster-grid">
-        {items.map((item) => (
-          <RasterPreview
-            key={item.key}
-            raster={item.raster}
-            label={item.label ?? item.key}
-            min={item.min}
-            max={item.max}
-            mean={item.mean}
-          />
-        ))}
-      </div>
+          <div className="input-raster-grid">
+            {items.map((item) => (
+              <RasterPreview
+                key={item.key}
+                raster={item.raster}
+                label={item.label ?? item.key}
+                min={item.min}
+                max={item.max}
+                mean={item.mean}
+              />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

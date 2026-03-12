@@ -106,6 +106,13 @@ export default function App() {
   const [mapStyle, setMapStyle] = useState(MAP_STYLES[0].value);
   const [modelInputsOpen, setModelInputsOpen] = useState(false);
   const [environmentOpen, setEnvironmentOpen] = useState(false);
+  const [collapsedPanels, setCollapsedPanels] = useState({
+    fireList: false,
+    insights: false,
+    timeline: false,
+    modelInputs: false,
+    environment: false,
+  });
   const [environmentScales, setEnvironmentScales] = useState(DEFAULT_ENVIRONMENT_SCALES);
   const [layerVisibility, setLayerVisibility] = useState(
     DEFAULT_LAYER_VISIBILITY,
@@ -256,6 +263,10 @@ export default function App() {
       return;
     }
 
+    setTimeline(null);
+    setSampleIndex(null);
+    setTimelineError(null);
+
     let ignore = false;
     const controller = new AbortController();
 
@@ -305,7 +316,13 @@ export default function App() {
   }, [selectedId, year]);
 
   useEffect(() => {
-    if (!selectedId || debouncedSampleIndex === null || debouncedSampleIndex === undefined) {
+    if (
+      !selectedId ||
+      sampleIndex === null ||
+      sampleIndex === undefined ||
+      debouncedSampleIndex === null ||
+      debouncedSampleIndex === undefined
+    ) {
       setLayersResponse(null);
       setLayersError(null);
       return;
@@ -355,7 +372,7 @@ export default function App() {
       ignore = true;
       controller.abort();
     };
-  }, [debouncedEnvironmentScales, debouncedSampleIndex, debouncedThreshold, selectedId, year]);
+  }, [debouncedEnvironmentScales, debouncedSampleIndex, debouncedThreshold, sampleIndex, selectedId, year]);
 
   useEffect(() => {
     if (!selectedFire || !mapRef.current) return;
@@ -479,6 +496,11 @@ export default function App() {
 
   const handleSelectFire = (fireId) => {
     setSelectedId(fireId);
+    setSampleIndex(null);
+    setTimeline(null);
+    setTimelineError(null);
+    setLayersResponse(null);
+    setLayersError(null);
   };
 
   const handleEnvironmentScaleChange = (key, value) => {
@@ -490,6 +512,13 @@ export default function App() {
 
   const handleResetEnvironment = () => {
     setEnvironmentScales(DEFAULT_ENVIRONMENT_SCALES);
+  };
+
+  const handleTogglePanelCollapse = (panelKey) => {
+    setCollapsedPanels((current) => ({
+      ...current,
+      [panelKey]: !current[panelKey],
+    }));
   };
 
   const handleTimelineStep = (step) => {
@@ -559,11 +588,15 @@ export default function App() {
 
       <ModelInputsPanel
         isOpen={modelInputsOpen}
+        collapsed={collapsedPanels.modelInputs}
+        onToggleCollapse={() => handleTogglePanelCollapse("modelInputs")}
         modelInputs={layersResponse?.layers?.modelInputs}
       />
 
       <EnvironmentPanel
         isOpen={environmentOpen}
+        collapsed={collapsedPanels.environment}
+        onToggleCollapse={() => handleTogglePanelCollapse("environment")}
         scales={environmentScales}
         onScaleChange={handleEnvironmentScaleChange}
         onReset={handleResetEnvironment}
@@ -581,6 +614,8 @@ export default function App() {
         onPrevPage={() => setCatalogPage((page) => Math.max(page - 1, 0))}
         onNextPage={() => setCatalogPage((page) => Math.min(page + 1, totalPages - 1))}
         onSelectFire={handleSelectFire}
+        collapsed={collapsedPanels.fireList}
+        onToggleCollapse={() => handleTogglePanelCollapse("fireList")}
       />
 
       <InsightsPanel
@@ -591,6 +626,8 @@ export default function App() {
         layersLoading={layersLoading}
         layerError={layersError ?? timelineError}
         overviewCount={filteredCatalog.length}
+        collapsed={collapsedPanels.insights}
+        onToggleCollapse={() => handleTogglePanelCollapse("insights")}
       />
 
       <TimelinePanel
@@ -601,6 +638,8 @@ export default function App() {
         onStep={handleTimelineStep}
         loading={timelineLoading}
         error={timelineError}
+        collapsed={collapsedPanels.timeline}
+        onToggleCollapse={() => handleTogglePanelCollapse("timeline")}
       />
     </div>
   );

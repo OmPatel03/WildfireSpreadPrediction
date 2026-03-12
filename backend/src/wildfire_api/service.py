@@ -113,12 +113,18 @@ class WildfireService:
     ) -> Tuple[SpreadPrediction, Dict]:
         target_year = year or self._settings.default_year
         cube = self._repository.load_cube(fire_id, target_year)
+        leads = self._settings.n_leading_observations
+        total_samples = max(cube.cube.shape[0] - leads, 0)
+        resolved_sample_offset = self._resolve_sample_index(sample_offset, total_samples)
         prepared_cube = self._apply_environment_scales(
             cube.cube,
-            sample_offset,
+            resolved_sample_offset,
             environment_scales,
         )
-        processed = self._preprocessor.prepare(prepared_cube, sample_offset=sample_offset)
+        processed = self._preprocessor.prepare(
+            prepared_cube,
+            sample_offset=resolved_sample_offset,
+        )
         probs = self._infer(processed)
         mask_threshold = threshold if threshold is not None else self._settings.probability_threshold
         mask = (probs >= mask_threshold).astype(np.uint8)
@@ -152,9 +158,12 @@ class WildfireService:
         environment_scales: Optional[Dict[str, float]] = None,
     ) -> Tuple[SpreadPrediction, Dict, Dict]:
         _ = model_input
-        resolved_sample = -1 if sample_index is None else sample_index
+        requested_sample = -1 if sample_index is None else sample_index
         target_year = year or self._settings.default_year
         cube = self._repository.load_cube(fire_id, target_year)
+        leads = self._settings.n_leading_observations
+        total_samples = max(cube.cube.shape[0] - leads, 0)
+        resolved_sample = self._resolve_sample_index(requested_sample, total_samples)
         prepared_cube = self._apply_environment_scales(
             cube.cube,
             resolved_sample,
@@ -207,12 +216,18 @@ class WildfireService:
         return None
 
     def _resolve_sample_index(self, sample_offset: int, total_samples: int) -> int:
+        if total_samples <= 0:
+            return 0
+
         offset = sample_offset
         if offset < 0:
             offset = total_samples + offset
-        if offset < 0 or offset >= total_samples:
-            raise IndexError(f"Sample offset {offset} outside range [0, {total_samples - 1}]")
-        return offset
+
+        if offset < 0:
+            return 0
+        if offset >= total_samples:
+            return total_samples - 1
+        return int(offset)
 
     def _apply_environment_scales(
         self,

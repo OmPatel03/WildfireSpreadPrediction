@@ -15,19 +15,33 @@ export default function HeatmapLayer({
   const layerRef = useRef(null);
 
   useEffect(() => {
-    if (!layerRef.current) {
-      layerRef.current = L.heatLayer(points, {
-        radius,
-        blur,
-        maxZoom,
-        minOpacity,
-        gradient,
-      });
-      layerRef.current.addTo(map);
-      return undefined;
+    const sanitizedPoints = (points ?? []).filter((point) => {
+      if (!Array.isArray(point) || point.length < 2) return false;
+      const lat = Number(point[0]);
+      const lon = Number(point[1]);
+      const intensity = point.length >= 3 ? Number(point[2]) : 1;
+      return (
+        Number.isFinite(lat) &&
+        Number.isFinite(lon) &&
+        Number.isFinite(intensity) &&
+        intensity > 0
+      );
+    });
+
+    if (layerRef.current) {
+      map.removeLayer(layerRef.current);
+      layerRef.current = null;
     }
 
-    layerRef.current.setLatLngs(points);
+    layerRef.current = L.heatLayer(sanitizedPoints, {
+      radius,
+      blur,
+      maxZoom,
+      minOpacity,
+      gradient,
+    });
+    layerRef.current.addTo(map);
+
     return undefined;
   }, [blur, gradient, map, maxZoom, minOpacity, points, radius]);
 

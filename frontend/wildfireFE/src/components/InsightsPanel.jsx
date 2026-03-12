@@ -27,24 +27,29 @@ export default function InsightsPanel({
   layersLoading,
   layerError,
   overviewCount,
+  collapsed,
+  onToggleCollapse,
 }) {
   return (
-    <aside className="side-panel right-panel app-overlay">
+    <aside className={`side-panel right-panel app-overlay${collapsed ? " is-collapsed" : ""}`}>
       <div className="panel-header">
         <div>
           <p className="eyebrow">Insights</p>
           <h2>{fire ? fire.locationName ?? fire.fireId : "Regional overview"}</h2>
         </div>
+        <button type="button" className="panel-collapse-button" onClick={onToggleCollapse}>
+          {collapsed ? "+" : "×"}
+        </button>
       </div>
 
-      {!fire && (
+      {!collapsed && !fire && (
         <div className="insight-card empty-state">
           <p>Select a fire from the list or click one on the map.</p>
           <StatRow label="Visible fires" value={overviewCount} />
         </div>
       )}
 
-      {fire && (
+      {!collapsed && fire && (
         <>
           <div className="insight-card">
             <h3>Incident metadata</h3>
