@@ -64,6 +64,32 @@ function buildSelectedExtentGeojson(selectedFire) {
   };
 }
 
+function buildSelectedOverviewGeojson(selectedFire) {
+  if (
+    !selectedFire ||
+    !Number.isFinite(selectedFire.longitude) ||
+    !Number.isFinite(selectedFire.latitude)
+  ) {
+    return null;
+  }
+
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [selectedFire.longitude, selectedFire.latitude],
+        },
+        properties: {
+          fireId: selectedFire.fireId,
+        },
+      },
+    ],
+  };
+}
+
 function buildSelectedOriginGeojson(selectedFire) {
   if (
     !selectedFire ||
@@ -93,21 +119,26 @@ function buildSelectedOriginGeojson(selectedFire) {
 }
 
 function getOverviewLayerOptions(selectedId, onOverviewSelect) {
+  const hasSelection = Boolean(selectedId);
+
   return {
     pointToLayer: (feature, latlng) => {
       const isSelected = feature?.properties?.fireId === selectedId;
       const samples = Number(feature?.properties?.samples ?? 0);
       const color = samples >= 8 ? "#ef4444" : samples >= 3 ? "#f59e0b" : "#3b82f6";
       return L.circleMarker(latlng, {
-        radius: isSelected ? 9 : 6,
-        fillColor: isSelected ? "#ffffff" : color,
-        color: isSelected ? "#2563eb" : "rgba(255,255,255,0.7)",
-        weight: isSelected ? 2 : 1.5,
-        opacity: 1,
-        fillOpacity: 0.92,
+        radius: isSelected ? 7.5 : hasSelection ? 4.5 : 6,
+        fillColor: isSelected ? "#fff7ed" : color,
+        color: isSelected ? "#fb923c" : hasSelection ? "rgba(148, 163, 184, 0.28)" : "rgba(255,255,255,0.7)",
+        weight: isSelected ? 2.2 : 1.2,
+        opacity: isSelected ? 1 : hasSelection ? 0.42 : 1,
+        fillOpacity: isSelected ? 1 : hasSelection ? 0.38 : 0.92,
       });
     },
     onEachFeature: (feature, layer) => {
+      if (feature?.properties?.fireId === selectedId) {
+        layer.bringToFront?.();
+      }
       layer.on("click", () => {
         const fireId = feature?.properties?.fireId;
         if (fireId) onOverviewSelect(fireId);
@@ -128,41 +159,29 @@ function getPredictionPolygonOptions() {
   };
 }
 
-function getExtentOptions() {
+function getSelectedOverviewHaloOptions() {
   return {
-    style: {
-      color: "#f8fafc",
-      weight: 2,
-      opacity: 0.9,
-      fillOpacity: 0,
-      dashArray: "6 4",
-    },
+    pointToLayer: (_feature, latlng) =>
+      L.circleMarker(latlng, {
+        radius: 17,
+        fillColor: "#fb923c",
+        color: "rgba(251, 146, 60, 0.72)",
+        weight: 1.5,
+        opacity: 1,
+        fillOpacity: 0.18,
+      }),
   };
 }
 
 function getSelectedExtentOptions() {
   return {
     style: {
-      color: "#38bdf8",
+      color: "#fb923c",
       weight: 3,
       opacity: 0.95,
-      fillOpacity: 0,
-      dashArray: "6 4",
+      fillOpacity: 0.04,
+      dashArray: "7 5",
     },
-  };
-}
-
-function getOriginOptions() {
-  return {
-    pointToLayer: (_feature, latlng) =>
-      L.circleMarker(latlng, {
-        radius: 6,
-        fillColor: "#ffffff",
-        color: "#0ea5e9",
-        weight: 2,
-        opacity: 1,
-        fillOpacity: 1,
-      }),
   };
 }
 
@@ -170,10 +189,10 @@ function getSelectedOriginOptions() {
   return {
     pointToLayer: (_feature, latlng) =>
       L.circleMarker(latlng, {
-        radius: 8,
-        fillColor: "#ffffff",
-        color: "#38bdf8",
-        weight: 3,
+        radius: 9,
+        fillColor: "#fff7ed",
+        color: "#fb923c",
+        weight: 3.2,
         opacity: 1,
         fillOpacity: 1,
       }),
@@ -193,6 +212,7 @@ export default function MapView({
   layerVisibility,
 }) {
   const selectedExtentData = buildSelectedExtentGeojson(selectedFire);
+  const selectedOverviewData = buildSelectedOverviewGeojson(selectedFire);
   const selectedOriginData = buildSelectedOriginGeojson(selectedFire);
   const basemapUrl = basemap?.[mapStyle] ?? basemap?.satellite ?? null;
   const tileUrl = basemapUrl ?? FALLBACK_BASEMAP_URL;
@@ -329,8 +349,12 @@ export default function MapView({
         />
       ) : null}
 
+      {layerVisibility.overview && selectedOverviewData ? (
+        <GeoJSON data={selectedOverviewData} {...getSelectedOverviewHaloOptions()} />
+      ) : null}
+
       {fireLayers?.extent && layerVisibility.extent ? (
-        <GeoJSON data={fireLayers.extent} {...getExtentOptions()} />
+        <GeoJSON data={fireLayers.extent} {...getSelectedExtentOptions()} />
       ) : null}
 
       {!fireLayers?.extent && selectedExtentData && layerVisibility.extent ? (
@@ -338,7 +362,7 @@ export default function MapView({
       ) : null}
 
       {fireLayers?.origin && layerVisibility.origin ? (
-        <GeoJSON data={fireLayers.origin} {...getOriginOptions()} />
+        <GeoJSON data={fireLayers.origin} {...getSelectedOriginOptions()} />
       ) : null}
 
       {!fireLayers?.origin && selectedOriginData && layerVisibility.origin ? (

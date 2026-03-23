@@ -19,11 +19,30 @@ function StatRow({ label, value }) {
   );
 }
 
+function MetricTile({ label, value }) {
+  return (
+    <div className="metric-tile">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function StateCard({ title, copy, tone = "info" }) {
+  return (
+    <div className={`state-card state-card-${tone}`}>
+      <strong>{title}</strong>
+      <p>{copy}</p>
+    </div>
+  );
+}
+
 export default function InsightsPanel({
   fire,
   summary,
   frame,
   timelineLoading,
+  timelineError,
   layersLoading,
   layerError,
   overviewCount,
@@ -36,6 +55,7 @@ export default function InsightsPanel({
         <div>
           <p className="eyebrow">Insights</p>
           <h2>{fire ? fire.locationName ?? fire.fireId : "Regional overview"}</h2>
+          {fire ? <p className="panel-subtitle">Frame-level performance and incident context.</p> : null}
         </div>
         <button type="button" className="panel-collapse-button" onClick={onToggleCollapse}>
           {collapsed ? "+" : "×"}
@@ -43,14 +63,25 @@ export default function InsightsPanel({
       </div>
 
       {!collapsed && !fire && (
-        <div className="insight-card empty-state">
-          <p>Select a fire from the list or click one on the map.</p>
-          <StatRow label="Visible fires" value={overviewCount} />
+        <div className="insight-card empty-state compact-empty-state">
+          <p className="empty-title">Select a fire from the list or click one on the map.</p>
+          <MetricTile label="Visible fires" value={overviewCount} />
         </div>
       )}
 
       {!collapsed && fire && (
         <>
+          <div className="insight-hero">
+            <div>
+              <p className="eyebrow">Current focus</p>
+              <h3>{fire.locationName ?? fire.fireId}</h3>
+            </div>
+            <div className="insight-hero-meta">
+              <span className="panel-meta-pill">Frame {frame?.label ?? "Pending"}</span>
+              <span className="panel-meta-pill">{frame?.targetDate ?? "No target date"}</span>
+            </div>
+          </div>
+
           <div className="insight-card">
             <h3>Incident metadata</h3>
             <StatRow label="Fire ID" value={fire.fireId} />
@@ -65,23 +96,54 @@ export default function InsightsPanel({
 
           <div className="insight-card">
             <h3>Model summary</h3>
-            {timelineLoading && <p className="status-text">Loading timeline…</p>}
-            {layersLoading && <p className="status-text">Loading layers…</p>}
-            {layerError && <p className="status-text error">{layerError}</p>}
+            {timelineLoading && (
+              <StateCard
+                tone="loading"
+                title="Timeline loading"
+                copy="Fetching frame order and target dates for this incident."
+              />
+            )}
+            {timelineError && (
+              <StateCard
+                tone="error"
+                title="Timeline unavailable"
+                copy={timelineError}
+              />
+            )}
+            {layersLoading && (
+              <StateCard
+                tone="loading"
+                title="Prediction layers updating"
+                copy="Refreshing overlay rasters and performance metrics for the selected frame."
+              />
+            )}
+            {layerError && (
+              <StateCard
+                tone="error"
+                title="Layer update failed"
+                copy={layerError}
+              />
+            )}
             {summary &&
               summary.positivePixels === 0 &&
               summary.groundTruthPixels === 0 && (
-                <p className="muted">
-                  No active fire pixels are present in this frame. Move the timeline to
-                  inspect another date.
-                </p>
+                <StateCard
+                  tone="warning"
+                  title="No active fire pixels"
+                  copy="Move the timeline to inspect another date with active fire activity."
+                />
               )}
             {summary ? (
               <>
-                <StatRow
-                  label="Mean probability"
-                  value={formatPercent(summary.meanProbability)}
-                />
+                <div className="metric-grid">
+                  <MetricTile
+                    label="Mean probability"
+                    value={formatPercent(summary.meanProbability)}
+                  />
+                  <MetricTile label="Precision" value={formatPercent(summary.precision)} />
+                  <MetricTile label="Recall" value={formatPercent(summary.recall)} />
+                  <MetricTile label="F1" value={formatPercent(summary.f1)} />
+                </div>
                 <StatRow
                   label="Predicted positive"
                   value={`${summary.positivePixels} / ${summary.totalPixels}`}
@@ -90,13 +152,18 @@ export default function InsightsPanel({
                   label="Ground truth"
                   value={`${summary.groundTruthPixels} / ${summary.totalPixels}`}
                 />
-                <StatRow label="Precision" value={formatPercent(summary.precision)} />
-                <StatRow label="Recall" value={formatPercent(summary.recall)} />
-                <StatRow label="F1" value={formatPercent(summary.f1)} />
                 <StatRow label="Accuracy" value={formatPercent(summary.accuracy)} />
               </>
             ) : (
-              !layersLoading && <p className="muted">No prediction summary loaded yet.</p>
+              !layersLoading &&
+              !timelineError &&
+              !layerError && (
+                <StateCard
+                  tone="info"
+                  title="No prediction summary yet"
+                  copy="Select a frame or wait for layer data to finish loading."
+                />
+              )
             )}
           </div>
 
@@ -110,7 +177,11 @@ export default function InsightsPanel({
                 <StatRow label="True negative" value={summary.trueNegative} />
               </>
             ) : (
-              <p className="muted">Select a frame to inspect confusion counts.</p>
+              <StateCard
+                tone="info"
+                title="No confusion counts yet"
+                copy="Confusion totals appear after a frame summary has been loaded."
+              />
             )}
           </div>
         </>

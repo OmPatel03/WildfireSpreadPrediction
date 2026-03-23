@@ -5,6 +5,7 @@ import FilterBar from "./components/FilterBar";
 import EnvironmentPanel from "./components/EnvironmentPanel";
 import FireListPanel from "./components/FireListPanel";
 import InsightsPanel from "./components/InsightsPanel";
+import MapHud from "./components/MapHud";
 import MapView from "./components/MapView";
 import ModelInputsPanel from "./components/ModelInputsPanel";
 import TimelinePanel from "./components/TimelinePanel";
@@ -384,10 +385,11 @@ export default function App() {
       Math.max(Math.round(window.innerWidth * 0.16), 140),
       240,
     );
-    const verticalPadding = Math.min(
+    const topPadding = Math.min(
       Math.max(Math.round(window.innerHeight * 0.1), 64),
       110,
     );
+    const bottomOverlayPadding = window.innerWidth <= 1100 ? 138 : 170;
 
     map.invalidateSize?.();
 
@@ -426,8 +428,8 @@ export default function App() {
             [maxLat + latPad, maxLon + lonPad],
           ],
           {
-            paddingTopLeft: [horizontalPadding, verticalPadding],
-            paddingBottomRight: [horizontalPadding, verticalPadding + 8],
+            paddingTopLeft: [horizontalPadding, topPadding],
+            paddingBottomRight: [horizontalPadding, bottomOverlayPadding],
             maxZoom: 13,
             animate: true,
             duration: 1,
@@ -450,8 +452,8 @@ export default function App() {
           [bbox.maxLat, bbox.maxLon],
         ],
         {
-          paddingTopLeft: [horizontalPadding, verticalPadding],
-          paddingBottomRight: [horizontalPadding, verticalPadding + 10],
+          paddingTopLeft: [horizontalPadding, topPadding],
+          paddingBottomRight: [horizontalPadding, bottomOverlayPadding],
           maxZoom: 12.5,
           animate: true,
           duration: 1,
@@ -564,6 +566,22 @@ export default function App() {
         fireLayers={fireLayers}
         layerVisibility={layerVisibility}
       />
+      <div className="map-atmosphere" aria-hidden="true">
+        <div className="map-glow map-glow-left" />
+        <div className="map-glow map-glow-right" />
+        <div className="map-vignette" />
+        {selectedFire ? <div className="map-focus-ring" /> : null}
+        {selectedFire ? <div className="map-focus-glow" /> : null}
+      </div>
+
+      <MapHud
+        selectedFire={selectedFire}
+        currentFrame={currentFrame}
+        layerVisibility={layerVisibility}
+        layersLoading={layersLoading}
+        layersError={layersError}
+        timelineLoading={timelineLoading}
+      />
 
       <FilterBar
         year={year}
@@ -590,6 +608,10 @@ export default function App() {
         isOpen={modelInputsOpen}
         collapsed={collapsedPanels.modelInputs}
         onToggleCollapse={() => handleTogglePanelCollapse("modelInputs")}
+        selectedFire={selectedFire}
+        currentFrame={currentFrame}
+        loading={layersLoading}
+        error={layersError}
         modelInputs={layersResponse?.layers?.modelInputs}
       />
 
@@ -597,6 +619,8 @@ export default function App() {
         isOpen={environmentOpen}
         collapsed={collapsedPanels.environment}
         onToggleCollapse={() => handleTogglePanelCollapse("environment")}
+        selectedFire={selectedFire}
+        currentFrame={currentFrame}
         scales={environmentScales}
         onScaleChange={handleEnvironmentScaleChange}
         onReset={handleResetEnvironment}
@@ -604,6 +628,7 @@ export default function App() {
 
       <FireListPanel
         fires={visibleCatalog}
+        totalCount={filteredCatalog.length}
         selectedId={selectedId}
         loading={catalogLoading}
         error={catalogError}
@@ -623,8 +648,9 @@ export default function App() {
         summary={fireSummary}
         frame={currentFrame}
         timelineLoading={timelineLoading}
+        timelineError={timelineError}
         layersLoading={layersLoading}
-        layerError={layersError ?? timelineError}
+        layerError={layersError}
         overviewCount={filteredCatalog.length}
         collapsed={collapsedPanels.insights}
         onToggleCollapse={() => handleTogglePanelCollapse("insights")}

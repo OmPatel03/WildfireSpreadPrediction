@@ -20,6 +20,7 @@ export default function TimelinePanel({
 
   const maxFramePosition = Math.max(frameCount - 1, 0);
   const sliderPosition = Math.min(pendingPosition ?? 0, maxFramePosition);
+  const isEmpty = !loading && !error && frameCount === 0;
 
   const commitPendingPosition = () => {
     if (loading || frameCount <= 1) return;
@@ -30,7 +31,9 @@ export default function TimelinePanel({
   };
 
   return (
-    <div className={`timeline-panel app-overlay${collapsed ? " is-collapsed" : ""}`}>
+    <div
+      className={`timeline-panel app-overlay${collapsed ? " is-collapsed" : ""}${isEmpty ? " is-empty" : ""}`}
+    >
       <div className="timeline-header">
         <div>
           <p className="eyebrow">Timeline</p>
@@ -63,31 +66,53 @@ export default function TimelinePanel({
         </div>
       </div>
 
-      {!collapsed && loading && <p className="status-text">Loading timeline…</p>}
-      {!collapsed && error && <p className="status-text error">{error}</p>}
-
       {!collapsed && (
         <>
-          <input
-            className="timeline-range"
-            type="range"
-            min={0}
-            max={maxFramePosition}
-            step={1}
-            value={sliderPosition}
-            onChange={(event) => setPendingPosition(Number(event.target.value))}
-            onMouseUp={commitPendingPosition}
-            onTouchEnd={commitPendingPosition}
-            onBlur={commitPendingPosition}
-            disabled={loading || frameCount <= 1}
-          />
+          {loading ? (
+            <div className="state-card state-card-loading">
+              <strong>Loading timeline</strong>
+              <p>Building the frame sequence for the selected fire.</p>
+            </div>
+          ) : error ? (
+            <div className="state-card state-card-error">
+              <strong>Timeline unavailable</strong>
+              <p>{error}</p>
+            </div>
+          ) : frameCount === 0 ? (
+            <div className="state-card state-card-info timeline-empty-state">
+              <strong>No timeline loaded</strong>
+              <p>Select a fire to load available frames.</p>
+            </div>
+          ) : (
+            <>
+              <div className="timeline-slider-card">
+                <div className="timeline-scrub-header">
+                  <span>Scrub frames</span>
+                  <span>{currentFrame?.targetDate ?? "No target date"}</span>
+                </div>
+                <input
+                  className="timeline-range"
+                  type="range"
+                  min={0}
+                  max={maxFramePosition}
+                  step={1}
+                  value={sliderPosition}
+                  onChange={(event) => setPendingPosition(Number(event.target.value))}
+                  onMouseUp={commitPendingPosition}
+                  onTouchEnd={commitPendingPosition}
+                  onBlur={commitPendingPosition}
+                  disabled={loading || frameCount <= 1}
+                />
+              </div>
 
-          <div className="timeline-footer">
-            <span>
-              Frame {frameCount ? (framePosition ?? 0) + 1 : 0} / {frameCount}
-            </span>
-            <span>{currentFrame?.targetDate ?? "No target date"}</span>
-          </div>
+              <div className="timeline-footer">
+                <span>
+                  Frame {frameCount ? (framePosition ?? 0) + 1 : 0} / {frameCount}
+                </span>
+                <span>{currentFrame?.label ?? "No active frame"}</span>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

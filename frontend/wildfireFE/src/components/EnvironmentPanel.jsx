@@ -9,6 +9,8 @@ const SCALE_KEYS = [
 
 export default function EnvironmentPanel({
   isOpen,
+  selectedFire,
+  currentFrame,
   scales,
   onScaleChange,
   onReset,
@@ -36,36 +38,50 @@ export default function EnvironmentPanel({
 
       {!collapsed && (
         <>
-          <p className="muted">
-            Inspired by the 2021 notebook. Scale dynamic inputs from 0.5× to 2.0×.
-            Terrain inputs remain fixed.
-          </p>
+          {!selectedFire ? (
+            <div className="state-card state-card-info">
+              <strong>Select a fire first</strong>
+              <p>Choose an incident before tuning environmental input scales.</p>
+            </div>
+          ) : !currentFrame ? (
+            <div className="state-card state-card-info">
+              <strong>Select a frame</strong>
+              <p>Pick a timeline frame to preview how environmental scaling affects that moment.</p>
+            </div>
+          ) : (
+            <>
+              <p className="muted">
+                Inspired by the 2021 notebook. Scale dynamic inputs from 0.5× to 2.0×.
+                Terrain inputs remain fixed.
+              </p>
 
-          <div className="environment-grid">
-            {SCALE_KEYS.map((item) => (
-              <div key={item.key} className="control-group">
-                <label htmlFor={`env-${item.key}`}>
-                  {item.label} <span>{Number(scales[item.key] ?? 1).toFixed(1)}×</span>
-                </label>
-                <input
-                  id={`env-${item.key}`}
-                  type="range"
-                  min={0.5}
-                  max={2.0}
-                  step={0.1}
-                  value={scales[item.key] ?? 1}
-                  onChange={(event) => onScaleChange(item.key, Number(event.target.value))}
-                />
+              <div className="environment-grid">
+                {SCALE_KEYS.map((item) => (
+                  <div key={item.key} className="control-group">
+                    <label htmlFor={`env-${item.key}`}>
+                      {item.label} <span>{Number(scales[item.key] ?? 1).toFixed(1)}×</span>
+                    </label>
+                    <input
+                      id={`env-${item.key}`}
+                      type="range"
+                      min={0.5}
+                      max={2.0}
+                      step={0.1}
+                      value={scales[item.key] ?? 1}
+                      onChange={(event) => onScaleChange(item.key, Number(event.target.value))}
+                    />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
 
-          <div className="environment-static">
-            <span className="environment-static-label">Fixed terrain</span>
-            <span>Elevation</span>
-            <span>Slope</span>
-            <span>Aspect</span>
-          </div>
+              <div className="environment-static">
+                <span className="environment-static-label">Fixed terrain</span>
+                <span>Elevation</span>
+                <span>Slope</span>
+                <span>Aspect</span>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

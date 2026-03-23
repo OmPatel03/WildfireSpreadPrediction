@@ -109,6 +109,10 @@ function RasterPreview({ raster, label, min, max, mean }) {
 
 export default function ModelInputsPanel({
   isOpen,
+  selectedFire,
+  currentFrame,
+  loading,
+  error,
   modelInputs,
   collapsed,
   onToggleCollapse,
@@ -136,22 +140,51 @@ export default function ModelInputsPanel({
 
       {!collapsed && (
         <>
-          <p className="muted">
-            Notebook-style raster previews for the current fire and frame.
-          </p>
+          {!selectedFire ? (
+            <div className="state-card state-card-info">
+              <strong>Select a fire first</strong>
+              <p>Choose an incident to load notebook-style raster previews.</p>
+            </div>
+          ) : !currentFrame ? (
+            <div className="state-card state-card-info">
+              <strong>Select a frame</strong>
+              <p>Pick a frame from the timeline to inspect raster inputs for that moment.</p>
+            </div>
+          ) : loading ? (
+            <div className="state-card state-card-loading">
+              <strong>Loading raster previews</strong>
+              <p>Fetching model input tiles for the active frame.</p>
+            </div>
+          ) : error ? (
+            <div className="state-card state-card-error">
+              <strong>Raster previews unavailable</strong>
+              <p>{error}</p>
+            </div>
+          ) : items.length === 0 ? (
+            <div className="state-card state-card-info">
+              <strong>No raster previews loaded</strong>
+              <p>This frame does not currently expose notebook-style preview rasters.</p>
+            </div>
+          ) : (
+            <>
+              <p className="muted">
+                Notebook-style raster previews for the current fire and frame.
+              </p>
 
-          <div className="input-raster-grid">
-            {items.map((item) => (
-              <RasterPreview
-                key={item.key}
-                raster={item.raster}
-                label={item.label ?? item.key}
-                min={item.min}
-                max={item.max}
-                mean={item.mean}
-              />
-            ))}
-          </div>
+              <div className="input-raster-grid">
+                {items.map((item) => (
+                  <RasterPreview
+                    key={item.key}
+                    raster={item.raster}
+                    label={item.label ?? item.key}
+                    min={item.min}
+                    max={item.max}
+                    mean={item.mean}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

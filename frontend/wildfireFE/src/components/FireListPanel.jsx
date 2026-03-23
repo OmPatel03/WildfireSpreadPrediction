@@ -11,6 +11,7 @@ function describeFire(fire) {
 
 export default function FireListPanel({
   fires,
+  totalCount,
   selectedId,
   loading,
   error,
@@ -30,6 +31,7 @@ export default function FireListPanel({
         <div>
           <p className="eyebrow">Incident browser</p>
           <h2>Wildfire catalog</h2>
+          <p className="panel-subtitle">Browse active records and jump into a fire footprint.</p>
         </div>
         <button type="button" className="panel-collapse-button" onClick={onToggleCollapse}>
           {collapsed ? "+" : "×"}
@@ -50,7 +52,7 @@ export default function FireListPanel({
           </div>
 
           <div className="panel-meta-row">
-            <span>{fires.length} fires</span>
+            <span className="panel-meta-pill">{totalCount} visible fires</span>
             <div className="pagination-controls">
               <button type="button" onClick={onPrevPage} disabled={page === 0}>
                 ‹
@@ -68,36 +70,54 @@ export default function FireListPanel({
             </div>
           </div>
 
-          {loading && <p className="status-text">Loading overview…</p>}
-          {error && <p className="status-text error">{error}</p>}
+          {loading && <p className="status-card">Loading overview…</p>}
+          {error && (
+            <div className="status-card state-card error-card">
+              <strong>Catalog unavailable for this dataset</strong>
+              <p>Try another year or verify the API route, then refresh the catalog.</p>
+              <p className="status-card-detail">{error}</p>
+            </div>
+          )}
 
-          <div className="fire-list">
-            {fires.map((fire) => (
-              <button
-                key={fire.fireId}
-                type="button"
-                className={`fire-card${selectedId === fire.fireId ? " selected" : ""}`}
-                onClick={() => onSelectFire(fire.fireId)}
-              >
-                <div className="fire-card-header">
-                  <strong>{describeFire(fire)}</strong>
-                  <span>{fire.year}</span>
-                </div>
-                <div className="fire-card-grid">
-                  <span>ID</span>
-                  <span>{fire.fireId}</span>
-                  <span>Samples</span>
-                  <span>{fire.samples}</span>
-                  <span>Grid</span>
-                  <span>
-                    {fire.width} × {fire.height}
-                  </span>
-                  <span>Target</span>
-                  <span>{fire.latestTargetDate ?? "n/a"}</span>
-                </div>
-              </button>
-            ))}
-          </div>
+          {!loading && !error && fires.length === 0 ? (
+            <div className="status-card state-card state-card-info">
+              <strong>{searchTerm ? "No fires match this search" : "No fires available"}</strong>
+              <p>
+                {searchTerm
+                  ? "Try a fire ID, location, or clear the search to restore the catalog."
+                  : "This year returned no visible incidents yet."}
+              </p>
+            </div>
+          ) : (
+            <div className="fire-list">
+              {fires.map((fire) => (
+                <button
+                  key={fire.fireId}
+                  type="button"
+                  className={`fire-card${selectedId === fire.fireId ? " selected" : ""}`}
+                  onClick={() => onSelectFire(fire.fireId)}
+                >
+                  <div className="fire-card-header">
+                    <div className="fire-card-title">
+                      <strong>{describeFire(fire)}</strong>
+                      <span className="fire-card-id">{fire.fireId}</span>
+                    </div>
+                    <span className="fire-card-year">{fire.year}</span>
+                  </div>
+                  <div className="fire-card-grid">
+                    <span>Samples</span>
+                    <span>{fire.samples}</span>
+                    <span>Grid</span>
+                    <span>
+                      {fire.width} × {fire.height}
+                    </span>
+                    <span>Target</span>
+                    <span>{fire.latestTargetDate ?? "n/a"}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </>
       )}
     </aside>

@@ -1,9 +1,13 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap");
+
 :root {
-  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Manrope", "Segoe UI", sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color: #e2e8f0;
-  background: #020617;
+  background:
+    radial-gradient(circle at top, rgba(249, 115, 22, 0.16), transparent 28%),
+    linear-gradient(180deg, #07111f 0%, #020617 100%);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -20,6 +24,7 @@ body,
 
 body {
   min-width: 320px;
+  letter-spacing: -0.01em;
 }
 
 a {
