@@ -6,6 +6,8 @@ services:
     build:
       dockerfile: ./frontend/frontend.build.Containerfile
       network: host
+      tags:
+        - ${COMPOSE_PROJECT_NAME:-wispr}-frontend-build
     command: npm run build # echo $VITE_MAPBOX_TOKEN
     environment:
       - VITE_MAPBOX_TOKEN=${VITE_MAPBOX_TOKEN}
@@ -13,6 +15,7 @@ services:
       - ${FE_BUILD_TARGET_DIR_HOST:-/u50/group17/dist}:/app/dist:Z,rw
     profiles:
       - web-build
+      - build
 
   web:
     container_name: ${COMPOSE_PROJECT_NAME:-wispr}-web
@@ -37,6 +40,17 @@ services:
     profiles:
       - test
 
+  backend-base:
+    container_name: ${COMPOSE_PROJECT_NAME:-wispr}-backend-base
+    build:
+      dockerfile: ./backend/backend.base.Containerfile
+      network: host
+      tags:
+        - ${COMPOSE_PROJECT_NAME:-wispr}-backend-base
+    profiles:
+      - backend-build
+      - build
+
   backend:
     container_name: ${COMPOSE_PROJECT_NAME:-wispr}-backend
     # image: <repository-source>
@@ -44,6 +58,8 @@ services:
     build:
       dockerfile: ./backend/backend.Containerfile
       network: host
+      tags:
+        - ${COMPOSE_PROJECT_NAME:-wispr}-backend
     command: uvicorn main:app --app-dir backend/src --reload --host ${UVICORN_HOST_NAME:-0.0.0.0} --port 8000
     environment:
       # set env vars for inside the container

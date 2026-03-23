@@ -81,13 +81,48 @@ query {
 The GraphQL types mirror the REST responses and surface the same GeoJSON payload for easy client reuse.
 
 
-## Containerization
+## Build and Deployment
 Components of the `WildfireSpreadPrediction` application are containerized for ease of setup and execution.
 
 Assume the below commands should be run from the repository root (`WildfireSpreadPrediction/`). If using a different
 container runtime/CLI, substitute `podman` with this (e.g. `docker`).
 
-### Building Images
+### Configuration
+Before building and deploying, make sure that the environment variables and configuration files are set correctly. These include:
+- The `compose` environment variables (e.g. `./local.env`)
+- The `vite` environment variables (i.e. `./frontend/wildfireFE/.env`)
+- The `nginx` configuration (i.e. `./nginx/nginx.conf`), as well as SSL/TLS certificate, if applicable
+
+### Quick Build and Deploy
+For convenience, all necessary container images and builders can be run with a few simple commands using compose profiles.
+
+For a complete rebuild of both the frontend and backend, as well as to re-deploy the web server/proxy and backend:
+
+```bash
+podman compose --profile --podman-build-args "--network host" build build   # builds frontend builder and backend base image
+podman compose --profile web-build run frontend-build                       # runs frontend builder to create dist/ directory and assets
+podman compose up -d --build                                                # builds backend image and runs wispr-web and wispr-backend containers
+```
+
+#### Re-Build and Re-Deploy Specific Images
+
+To rebuild only the frontend, re-build and re-run the builder, then restart the web server:
+```bash
+podman compose --profile --podman-build-args "--network host" web-build build   # builds the frontend builder image
+podman compose --profile web-build run frontend-build                           # runs the frontend builder image to create dist/
+podman compose restart web                                                      # restarts the web server to use new frontend files
+# # alternatively, if web server/proxy container needs to be recreated, due to e.g. change in the image:
+# podman compose up -d web                                                      # redeploys web container
+```
+
+To rebuild only the backend, (optionally) re-build the base image and re-build the backend image, then re-deploy the backend:
+```bash
+podman compose --profile --podman-build-args "--network host" backend-build build   # builds backend base image
+# ^^ Optional, only if base image does not need rebuild (i.e. no requirements changes)
+podman compose up -d --build backend                                                # builds backend image and runs backend container
+```
+
+### Building Images Individually
 
 #### Build Frontend Builder Image
 The frontend builder image installs the required Node modules and prepares for a production build.
@@ -98,13 +133,14 @@ the build files in a bind-mounted volume so that they can be accessed on the hos
 To build the frontend builder image, run:
 
 ```bash
-podman build --network host -f frontend/frontend.build.Containerfile -t wispr-frontend-build .
+# podman build --network host -f frontend/frontend.build.Containerfile -t wispr-frontend-build .
+podman compose --profile web-build --podman-build-args "--network host" build # use compose build so that image tags are correct (underscores)
 ```
 
-To run the frontend builder image, use Compose:
+To run the frontend builder image (to build frontend files, `dist/`), use Compose:
 
 ```bash
-podman compose run --rm frontend-build
+podman compose --profile web-build run frontend-build
 ```
 
 After the container runs, the production web files should be generated and accessible in the specified host directory.
@@ -117,7 +153,8 @@ from the final, runnable image allows for quicker builds, assuming there are no 
 To build the backend base image, run:
 
 ```bash
-podman build --network host -f backend/backend.base.Containerfile -t wispr-backend-base .
+# podman build --network host -f backend/backend.base.Containerfile -t wispr-backend-base .
+podman compose --profile backend-build --podman-build-args "--network host" build # use compose build 
 ```
 - In RHEL/SELinux enabled operating systems, builds may fail without additional configuration.
 For ease of execution, this can be run as root with `sudo`
@@ -135,11 +172,14 @@ in order to minimize build time for the final image.
 To build the backend image, run:
 
 ```bash
-podman build -f backend/backend.Containerfile -t wispr-backend .
+# podman build -f backend/backend.Containerfile -t wispr-backend .
+podman compose build wispr-backend
 ```
 - The same notes as above apply, especially if installing additional requirements
 
-## Running Containers
+Alternatively, this step can be skipped if the `--build` flag is used with the `podman compose up` command below.
+
+### Running Containers
 For convenience, it is easiest to run the application containers using `podman compose`.  
 
 The `compose.yaml` file defines several services, the main ones being `frontend` and `backend`.
@@ -152,18 +192,22 @@ For each service, the following may be defined:
 
 ... and so on. This avoids having to manually set these as flags in regular `podman` commands (e.g. `build`, `run`).
 
-To run the application, the simplest option is to run:
+To bring up the application, the simplest option is to run:
 
 ```bash
 podman compose up -d
 ```
+The `--build` flag should be added if the backend image was not already built.
 
 Then, to stop and remove the container(s), run:
+
 ```bash
 podman compose down
 ```
 
-To run only a specific container:
+To bring up or down only a specific container:
+
 ```bash
 podman compose up <container-name> -d
+podman compose down <container-name>
 ```
