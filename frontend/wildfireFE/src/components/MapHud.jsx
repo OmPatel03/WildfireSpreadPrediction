@@ -58,7 +58,7 @@ export default function MapHud({
         </div>
       </div>
 
-      {hasSelection ? (
+      {/* {hasSelection ? (
         <div className="map-hud-card map-status-card">
           <div className="map-hud-header">
             <div>
@@ -86,7 +86,7 @@ export default function MapHud({
             </div>
           </div>
         </div>
-      ) : null}
+      ) : null} */}
     </div>
   );
 }

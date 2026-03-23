@@ -3,12 +3,10 @@ import "leaflet/dist/leaflet.css";
 import "./App.css";
 import FilterBar from "./components/FilterBar";
 import EnvironmentPanel from "./components/EnvironmentPanel";
-import FireListPanel from "./components/FireListPanel";
-import InsightsPanel from "./components/InsightsPanel";
+import IncidentsPanel from "./components/IncidentsPanel";
 import MapHud from "./components/MapHud";
 import MapView from "./components/MapView";
 import ModelInputsPanel from "./components/ModelInputsPanel";
-import TimelinePanel from "./components/TimelinePanel";
 import { fetchLayers, fetchOverview, fetchTimeline, fetchYears } from "./util/api.js";
 import { annotateCatalogWithLocations } from "./util/geocode.js";
 
@@ -104,13 +102,12 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(null);
   const [sampleIndex, setSampleIndex] = useState(null);
   const [viewMode, setViewMode] = useState("2d");
+  const [incidentsView, setIncidentsView] = useState("catalog");
   const [mapStyle, setMapStyle] = useState(MAP_STYLES[0].value);
   const [modelInputsOpen, setModelInputsOpen] = useState(false);
   const [environmentOpen, setEnvironmentOpen] = useState(false);
   const [collapsedPanels, setCollapsedPanels] = useState({
-    fireList: false,
-    insights: false,
-    timeline: false,
+    incidents: false,
     modelInputs: false,
     environment: false,
   });
@@ -240,6 +237,12 @@ export default function App() {
   useEffect(() => {
     setCatalogPage((page) => Math.min(page, totalPages - 1));
   }, [totalPages]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setIncidentsView("catalog");
+    }
+  }, [selectedId]);
 
   const visibleCatalog = useMemo(() => {
     const start = catalogPage * PAGE_SIZE;
@@ -389,7 +392,7 @@ export default function App() {
       Math.max(Math.round(window.innerHeight * 0.1), 64),
       110,
     );
-    const bottomOverlayPadding = window.innerWidth <= 1100 ? 138 : 170;
+    const bottomOverlayPadding = window.innerWidth <= 1100 ? 86 : 108;
 
     map.invalidateSize?.();
 
@@ -498,6 +501,7 @@ export default function App() {
 
   const handleSelectFire = (fireId) => {
     setSelectedId(fireId);
+    setIncidentsView("detail");
     setSampleIndex(null);
     setTimeline(null);
     setTimelineError(null);
@@ -570,8 +574,6 @@ export default function App() {
         <div className="map-glow map-glow-left" />
         <div className="map-glow map-glow-right" />
         <div className="map-vignette" />
-        {selectedFire ? <div className="map-focus-ring" /> : null}
-        {selectedFire ? <div className="map-focus-glow" /> : null}
       </div>
 
       <MapHud
@@ -602,6 +604,13 @@ export default function App() {
         onToggleLayer={handleToggleLayer}
         environmentOpen={environmentOpen}
         onToggleEnvironment={() => setEnvironmentOpen((open) => !open)}
+        timeline={timeline}
+        currentFrame={currentFrame}
+        framePosition={currentFramePosition}
+        timelineLoading={timelineLoading}
+        timelineError={timelineError}
+        onTimelineStep={handleTimelineStep}
+        onTimelineChange={handleTimelineChange}
       />
 
       <ModelInputsPanel
@@ -626,7 +635,7 @@ export default function App() {
         onReset={handleResetEnvironment}
       />
 
-      <FireListPanel
+      <IncidentsPanel
         fires={visibleCatalog}
         totalCount={filteredCatalog.length}
         selectedId={selectedId}
@@ -639,11 +648,10 @@ export default function App() {
         onPrevPage={() => setCatalogPage((page) => Math.max(page - 1, 0))}
         onNextPage={() => setCatalogPage((page) => Math.min(page + 1, totalPages - 1))}
         onSelectFire={handleSelectFire}
-        collapsed={collapsedPanels.fireList}
-        onToggleCollapse={() => handleTogglePanelCollapse("fireList")}
-      />
-
-      <InsightsPanel
+        collapsed={collapsedPanels.incidents}
+        onToggleCollapse={() => handleTogglePanelCollapse("incidents")}
+        view={incidentsView}
+        onBackToCatalog={() => setIncidentsView("catalog")}
         fire={insightFire}
         summary={fireSummary}
         frame={currentFrame}
@@ -651,22 +659,8 @@ export default function App() {
         timelineError={timelineError}
         layersLoading={layersLoading}
         layerError={layersError}
-        overviewCount={filteredCatalog.length}
-        collapsed={collapsedPanels.insights}
-        onToggleCollapse={() => handleTogglePanelCollapse("insights")}
       />
 
-      <TimelinePanel
-        timeline={timeline}
-        currentFrame={currentFrame}
-        framePosition={currentFramePosition}
-        onChangePosition={handleTimelineChange}
-        onStep={handleTimelineStep}
-        loading={timelineLoading}
-        error={timelineError}
-        collapsed={collapsedPanels.timeline}
-        onToggleCollapse={() => handleTogglePanelCollapse("timeline")}
-      />
     </div>
   );
 }
