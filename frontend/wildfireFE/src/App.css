@@ -354,59 +354,6 @@ body {
   flex: 0 1 190px;
 }
 
-.timeline-inline-group {
-  min-width: 170px;
-  flex: 0 1 180px;
-}
-
-.timeline-inline-control {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 38px;
-  padding: 3px;
-  border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(15, 23, 42, 0.72);
-}
-
-.timeline-inline-control.is-error {
-  border-color: rgba(248, 113, 113, 0.22);
-  background: rgba(54, 18, 25, 0.78);
-}
-
-.timeline-inline-button {
-  min-width: 30px;
-  width: 30px;
-  min-height: 30px;
-  padding: 0;
-  border-radius: 10px;
-  flex: 0 0 auto;
-}
-
-.timeline-inline-button:disabled {
-  background: rgba(8, 15, 28, 0.44);
-  color: rgba(148, 163, 184, 0.72);
-}
-
-.timeline-inline-date {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 30px;
-  padding: 0 8px;
-  border-radius: 10px;
-  background: rgba(8, 15, 28, 0.58);
-  color: var(--text-secondary);
-  font-size: 0.72rem;
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .top-bar-timeline {
   display: grid;
   gap: 10px;
@@ -555,6 +502,86 @@ body {
 
 .incidents-panel-last-card {
   margin-bottom: 0;
+}
+
+.timeline-dock {
+  right: 18px;
+  bottom: 48px;
+  width: min(340px, calc(100vw - 36px));
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(8, 15, 28, 0.9), rgba(5, 10, 20, 0.84));
+  backdrop-filter: blur(18px);
+  box-shadow: 0 20px 42px rgba(2, 6, 23, 0.34);
+}
+
+.timeline-dock.is-error {
+  border-color: rgba(248, 113, 113, 0.2);
+}
+
+.timeline-dock-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.timeline-dock-header h3 {
+  margin: 4px 0 0;
+  font-size: 0.96rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.timeline-dock-controls {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 36px;
+  gap: 8px;
+  align-items: center;
+}
+
+.timeline-dock-arrow {
+  min-width: 36px;
+  width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 12px;
+}
+
+.timeline-dock-date {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  min-width: 0;
+  padding: 0 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  background: rgba(8, 15, 28, 0.54);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timeline-dock-range {
+  margin: 0;
+}
+
+.timeline-dock-status {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.timeline-dock-status.error {
+  color: #fca5a5;
 }
 
 .left-panel {
@@ -1254,6 +1281,7 @@ input[type="range"] {
     top: calc(174px + 31vh + 12px);
   }
 
+  .timeline-dock,
   .timeline-panel,
   .environment-panel,
   .model-inputs-panel {
@@ -1308,10 +1336,6 @@ input[type="range"] {
     align-items: stretch;
   }
 
-  .timeline-inline-group {
-    min-width: 100%;
-  }
-
   .threshold-row-group {
     min-width: 100%;
     flex-basis: 100%;
@@ -1337,6 +1361,7 @@ input[type="range"] {
     top: calc(250px + 24vh + 12px);
   }
 
+  .timeline-dock,
   .timeline-panel,
   .environment-panel,
   .model-inputs-panel {
@@ -1344,6 +1369,10 @@ input[type="range"] {
     right: 14px;
     width: auto;
     padding: 16px;
+  }
+
+  .timeline-dock {
+    bottom: 14px;
   }
 
   .environment-panel,

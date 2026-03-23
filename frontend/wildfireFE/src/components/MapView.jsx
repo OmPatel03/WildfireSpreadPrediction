@@ -159,20 +159,6 @@ function getPredictionPolygonOptions() {
   };
 }
 
-function getSelectedOverviewHaloOptions() {
-  return {
-    pointToLayer: (_feature, latlng) =>
-      L.circleMarker(latlng, {
-        radius: 17,
-        fillColor: "#fb923c",
-        color: "rgba(251, 146, 60, 0.72)",
-        weight: 1.5,
-        opacity: 1,
-        fillOpacity: 0.18,
-      }),
-  };
-}
-
 function getSelectedExtentOptions() {
   return {
     style: {
@@ -347,10 +333,6 @@ export default function MapView({
           minOpacity={0.9}
           gradient={FALSE_NEGATIVE_HEAT_GRADIENT}
         />
-      ) : null}
-
-      {layerVisibility.overview && selectedOverviewData ? (
-        <GeoJSON data={selectedOverviewData} {...getSelectedOverviewHaloOptions()} />
       ) : null}
 
       {fireLayers?.extent && layerVisibility.extent ? (

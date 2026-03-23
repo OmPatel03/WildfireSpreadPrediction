@@ -27,21 +27,7 @@ export default function FilterBar({
   onToggleLayer,
   environmentOpen,
   onToggleEnvironment,
-  timeline,
-  currentFrame,
-  framePosition,
-  timelineLoading,
-  timelineError,
-  onTimelineStep,
 }) {
-  const frameCount = timeline?.frames?.length ?? 0;
-  const hasTimeline = frameCount > 0;
-  const timelineLabel = timelineLoading
-    ? "Loading..."
-    : timelineError
-      ? "Timeline unavailable"
-      : currentFrame?.targetDate ?? "Select fire";
-
   return (
     <div className="top-bar app-overlay">
       <div className="top-bar-header">
@@ -101,37 +87,6 @@ export default function FilterBar({
               </option>
             ))}
           </select>
-        </div>
-
-        <div className="control-group compact timeline-inline-group">
-          <label htmlFor="timeline-inline-current">Timeline</label>
-          <div className={"timeline-inline-control" + (timelineError ? " is-error" : "") }>
-            <button
-              type="button"
-              className="timeline-inline-button"
-              onClick={() => onTimelineStep(-1)}
-              disabled={timelineLoading || !hasTimeline || framePosition <= 0}
-              aria-label="Previous frame"
-            >
-              ←
-            </button>
-            <span
-              id="timeline-inline-current"
-              className="timeline-inline-date"
-              title={timelineLabel}
-            >
-              {timelineLabel}
-            </span>
-            <button
-              type="button"
-              className="timeline-inline-button"
-              onClick={() => onTimelineStep(1)}
-              disabled={timelineLoading || !hasTimeline || framePosition >= frameCount - 1}
-              aria-label="Next frame"
-            >
-              →
-            </button>
-          </div>
         </div>
 
         <div className="control-group compact range-group threshold-row-group">

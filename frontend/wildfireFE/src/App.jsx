@@ -7,6 +7,7 @@ import IncidentsPanel from "./components/IncidentsPanel";
 import MapHud from "./components/MapHud";
 import MapView from "./components/MapView";
 import ModelInputsPanel from "./components/ModelInputsPanel";
+import TimelineDock from "./components/TimelineDock";
 import { fetchLayers, fetchOverview, fetchTimeline, fetchYears } from "./util/api.js";
 import { annotateCatalogWithLocations } from "./util/geocode.js";
 
@@ -604,13 +605,6 @@ export default function App() {
         onToggleLayer={handleToggleLayer}
         environmentOpen={environmentOpen}
         onToggleEnvironment={() => setEnvironmentOpen((open) => !open)}
-        timeline={timeline}
-        currentFrame={currentFrame}
-        framePosition={currentFramePosition}
-        timelineLoading={timelineLoading}
-        timelineError={timelineError}
-        onTimelineStep={handleTimelineStep}
-        onTimelineChange={handleTimelineChange}
       />
 
       <ModelInputsPanel
@@ -660,6 +654,18 @@ export default function App() {
         layersLoading={layersLoading}
         layerError={layersError}
       />
+
+      {selectedFire ? (
+        <TimelineDock
+          timeline={timeline}
+          currentFrame={currentFrame}
+          framePosition={currentFramePosition}
+          onChangePosition={handleTimelineChange}
+          onStep={handleTimelineStep}
+          loading={timelineLoading}
+          error={timelineError}
+        />
+      ) : null}
 
     </div>
   );
