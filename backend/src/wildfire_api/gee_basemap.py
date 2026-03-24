@@ -12,6 +12,7 @@ from .repository import WildfireMetadata
 
 SATELLITE_PALETTE = ["0b1f0b", "1f3b1f", "5c7a29", "a3b18a", "d9e8c4"]
 TERRAIN_PALETTE = ["0f172a", "334155", "64748b", "94a3b8", "e2e8f0"]
+VALID_BASEMAP_STYLES = {"satellite", "terrain", "outdoors"}
 
 
 @lru_cache(maxsize=1)
@@ -22,11 +23,6 @@ def ensure_gee_initialized() -> None:
         or "ee-neeljos24"
     )
     ee.Initialize(project=project)
-
-
-def _build_region(metadata: WildfireMetadata) -> ee.Geometry:
-    min_lon, min_lat, max_lon, max_lat = metadata.bbox
-    return _build_region_from_bbox(min_lon, min_lat, max_lon, max_lat)
 
 
 def _build_region_from_bbox(
@@ -105,25 +101,104 @@ def _tile_url(image: ee.Image) -> str:
     return map_id["tile_fetcher"].url_format
 
 
+def _build_style_visual(
+    style: str,
+    region: ee.Geometry,
+    target_date: Optional[str],
+) -> ee.Image:
+    if style == "satellite":
+        return _satellite_visual(region, target_date)
+    if style == "terrain":
+        return _terrain_visual()
+    if style == "outdoors":
+        return _outdoors_visual(region, target_date)
+    raise ValueError(f"Unsupported basemap style '{style}'.")
+
+
+@lru_cache(maxsize=768)
+def _cached_basemap_tile(
+    style: str,
+    min_lon: float,
+    min_lat: float,
+    max_lon: float,
+    max_lat: float,
+    target_date: Optional[str],
+) -> str:
+    ensure_gee_initialized()
+    region = _build_region_from_bbox(min_lon, min_lat, max_lon, max_lat)
+    return _tile_url(_build_style_visual(style, region, target_date))
+
+
 @lru_cache(maxsize=256)
-def _cached_fire_basemap(
+def _cached_basemap(
     min_lon: float,
     min_lat: float,
     max_lon: float,
     max_lat: float,
     target_date: Optional[str],
 ) -> tuple[str, str, str]:
-    ensure_gee_initialized()
-    region = _build_region_from_bbox(min_lon, min_lat, max_lon, max_lat)
-    satellite = _tile_url(_satellite_visual(region, target_date))
-    terrain = _tile_url(_terrain_visual())
-    outdoors = _tile_url(_outdoors_visual(region, target_date))
+    satellite = _cached_basemap_tile(
+        "satellite",
+        min_lon,
+        min_lat,
+        max_lon,
+        max_lat,
+        target_date,
+    )
+    terrain = _cached_basemap_tile(
+        "terrain",
+        min_lon,
+        min_lat,
+        max_lon,
+        max_lat,
+        target_date,
+    )
+    outdoors = _cached_basemap_tile(
+        "outdoors",
+        min_lon,
+        min_lat,
+        max_lon,
+        max_lat,
+        target_date,
+    )
     return satellite, terrain, outdoors
 
 
-def build_fire_basemap(metadata: WildfireMetadata, target_date: Optional[str]) -> Dict[str, Any]:
-    min_lon, min_lat, max_lon, max_lat = metadata.bbox
-    satellite, terrain, outdoors = _cached_fire_basemap(
+def build_bbox_basemap_tile(
+    min_lon: float,
+    min_lat: float,
+    max_lon: float,
+    max_lat: float,
+    target_date: Optional[str],
+    style: str,
+) -> Dict[str, Any]:
+    normalized_style = style.lower()
+    if normalized_style not in VALID_BASEMAP_STYLES:
+        raise ValueError(f"Unsupported basemap style '{style}'.")
+
+    return {
+        "style": normalized_style,
+        "url": _cached_basemap_tile(
+            normalized_style,
+            min_lon,
+            min_lat,
+            max_lon,
+            max_lat,
+            target_date,
+        ),
+        "attribution": "Google Earth Engine",
+        "targetDate": target_date,
+    }
+
+
+def build_bbox_basemap(
+    min_lon: float,
+    min_lat: float,
+    max_lon: float,
+    max_lat: float,
+    target_date: Optional[str],
+) -> Dict[str, Any]:
+    satellite, terrain, outdoors = _cached_basemap(
         min_lon,
         min_lat,
         max_lon,
@@ -138,3 +213,14 @@ def build_fire_basemap(metadata: WildfireMetadata, target_date: Optional[str]) -
         "attribution": "Google Earth Engine",
         "targetDate": target_date,
     }
+
+
+def build_fire_basemap(metadata: WildfireMetadata, target_date: Optional[str]) -> Dict[str, Any]:
+    min_lon, min_lat, max_lon, max_lat = metadata.bbox
+    return build_bbox_basemap(
+        min_lon,
+        min_lat,
+        max_lon,
+        max_lat,
+        target_date,
+    )

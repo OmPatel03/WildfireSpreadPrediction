@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from wildfire_api import WildfireService, get_settings
 from wildfire_api.graphql_schema import build_graphql_router
 from wildfire_api.schemas import (
+    BasemapTileResponse,
     FireLayersResponse,
     HealthResponse,
     SpreadRequest,
@@ -65,6 +66,18 @@ def create_app() -> FastAPI:
     async def years() -> List[int]:
         return await run_in_threadpool(service.available_years)
 
+    @app.get("/basemap", response_model=BasemapTileResponse)
+    async def basemap(
+        year: int | None = Query(None, description="Year to read from"),
+        style: str = Query(
+            "satellite",
+            pattern="^(satellite|terrain|outdoors)$",
+            description="Overview basemap style to fetch",
+        ),
+    ) -> BasemapTileResponse:
+        payload = await run_in_threadpool(service.overview_basemap, year, style)
+        return BasemapTileResponse(**payload)
+
     @app.post("/findSpread", response_model=SpreadResponse)
     async def find_spread(request: SpreadRequest) -> SpreadResponse:
         prediction, geojson = await run_in_threadpool(
@@ -95,6 +108,11 @@ def create_app() -> FastAPI:
         sample_index: int | None = Query(None, alias="sampleIndex", ge=0),
         threshold: float | None = Query(None, ge=0.0, le=1.0),
         model_input: str | None = Query(None, alias="modelInput"),
+        basemap_provider: str = Query(
+            "gee",
+            alias="basemapProvider",
+            pattern="^(gee|osm)$",
+        ),
         viirs_m11_scale: float = Query(1.0, alias="viirsM11Scale", ge=0.5, le=2.0),
         viirs_i2_scale: float = Query(1.0, alias="viirsI2Scale", ge=0.5, le=2.0),
         ndvi_scale: float = Query(1.0, alias="ndviScale", ge=0.5, le=2.0),
@@ -117,6 +135,7 @@ def create_app() -> FastAPI:
                 "precip": precip_scale,
                 "wind_speed": wind_speed_scale,
             },
+            basemap_provider,
         )
         return FireLayersResponse.from_prediction(prediction, geojson, layers)
 

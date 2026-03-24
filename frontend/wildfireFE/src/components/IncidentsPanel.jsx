@@ -121,7 +121,6 @@ export default function IncidentsPanel({
               </div>
 
               <div className="panel-meta-row">
-                <span className="panel-meta-pill">{totalCount} visible fires</span>
                 <div className="pagination-controls">
                   <button type="button" onClick={onPrevPage} disabled={page === 0}>
                     ‹

@@ -29,6 +29,10 @@ async function fetchOverview({ year, limit, offset = 0, signal }) {
   return fetchJson(buildUrl("/overview", { year, limit, offset }), { signal });
 }
 
+async function fetchBasemap({ year, style, signal }) {
+  return fetchJson(buildUrl("/basemap", { year, style }), { signal });
+}
+
 async function fetchYears({ signal } = {}) {
   return fetchJson(buildUrl("/years"), { signal });
 }
@@ -37,13 +41,21 @@ async function fetchTimeline({ fireId, year, signal }) {
   return fetchJson(buildUrl(`/fires/${fireId}/timeline`, { year }), { signal });
 }
 
-async function fetchLayers({ fireId, year, sampleIndex, threshold, signal }) {
-  const environmentScales = arguments[0]?.environmentScales ?? {};
+async function fetchLayers({
+  fireId,
+  year,
+  sampleIndex,
+  threshold,
+  basemapProvider,
+  environmentScales = {},
+  signal,
+}) {
   return fetchJson(
     buildUrl(`/fires/${fireId}/layers`, {
       year,
       sampleIndex,
       threshold,
+      basemapProvider,
       viirsM11Scale: environmentScales.viirs_m11,
       viirsI2Scale: environmentScales.viirs_i2,
       ndviScale: environmentScales.ndvi,
@@ -58,6 +70,7 @@ async function fetchLayers({ fireId, year, sampleIndex, threshold, signal }) {
 export {
   API_BASE_URL,
   GRAPHQL_URL,
+  fetchBasemap,
   fetchJson,
   fetchLayers,
   fetchOverview,

@@ -8,7 +8,13 @@ import MapHud from "./components/MapHud";
 import MapView from "./components/MapView";
 import ModelInputsPanel from "./components/ModelInputsPanel";
 import TimelineDock from "./components/TimelineDock";
-import { fetchLayers, fetchOverview, fetchTimeline, fetchYears } from "./util/api.js";
+import {
+  fetchBasemap,
+  fetchLayers,
+  fetchOverview,
+  fetchTimeline,
+  fetchYears,
+} from "./util/api.js";
 import { annotateCatalogWithLocations } from "./util/geocode.js";
 
 const DEFAULT_YEAR = 2021;
@@ -17,6 +23,8 @@ const DEFAULT_CATALOG_LIMIT = 100;
 const PAGE_SIZE = 8;
 const THREE_D_BEARING = -20;
 const THREE_D_PITCH = 55;
+const DEFAULT_MAP_PROVIDER = "gee";
+const DEFAULT_OSM_PROJECTION = "mercator";
 const INITIAL_VIEW = {
   longitude: -100,
   latitude: 40,
@@ -31,6 +39,7 @@ const MAP_STYLES = [
 ];
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN ?? "";
 const FALLBACK_YEAR_OPTIONS = [DEFAULT_YEAR];
+const OVERVIEW_BASEMAP_CACHE_TTL_MS = 1000 * 60 * 60 * 6;
 const DEFAULT_ENVIRONMENT_SCALES = {
   viirs_m11: 1,
   viirs_i2: 1,
@@ -89,8 +98,70 @@ function buildOverviewGeojson(fires) {
   };
 }
 
+function getOverviewBasemapStorageKey(year, style) {
+  return `wildfire-overview-basemap:${year}:${style}`;
+}
+
+function readStoredOverviewBasemap(year, style) {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(getOverviewBasemapStorageKey(year, style));
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed?.url || parsed?.style !== style) {
+      window.localStorage.removeItem(getOverviewBasemapStorageKey(year, style));
+      return null;
+    }
+
+    if (!Number.isFinite(parsed?.savedAt)) {
+      window.localStorage.removeItem(getOverviewBasemapStorageKey(year, style));
+      return null;
+    }
+
+    if (Date.now() - parsed.savedAt > OVERVIEW_BASEMAP_CACHE_TTL_MS) {
+      window.localStorage.removeItem(getOverviewBasemapStorageKey(year, style));
+      return null;
+    }
+
+    return parsed;
+  } catch (error) {
+    console.warn("Unable to read cached overview basemap:", error);
+    return null;
+  }
+}
+
+function storeOverviewBasemap(year, payload) {
+  if (typeof window === "undefined" || !payload?.style || !payload?.url) return;
+
+  try {
+    window.localStorage.setItem(
+      getOverviewBasemapStorageKey(year, payload.style),
+      JSON.stringify({
+        ...payload,
+        savedAt: Date.now(),
+      }),
+    );
+  } catch (error) {
+    console.warn("Unable to cache overview basemap:", error);
+  }
+}
+
+function mergeOverviewBasemapTile(current, payload) {
+  if (!payload?.style || !payload?.url) return current;
+
+  return {
+    ...(current ?? {}),
+    [payload.style]: payload.url,
+    attribution: payload.attribution,
+    targetDate: payload.targetDate,
+  };
+}
+
 export default function App() {
   const mapRef = useRef(null);
+  const basemapCacheRef = useRef(new Map());
   const timelineCacheRef = useRef(new Map());
   const layersCacheRef = useRef(new Map());
 
@@ -104,7 +175,9 @@ export default function App() {
   const [sampleIndex, setSampleIndex] = useState(null);
   const [viewMode, setViewMode] = useState("2d");
   const [incidentsView, setIncidentsView] = useState("catalog");
+  const [mapProvider, setMapProvider] = useState(DEFAULT_MAP_PROVIDER);
   const [mapStyle, setMapStyle] = useState(MAP_STYLES[0].value);
+  const [osmProjection, setOsmProjection] = useState(DEFAULT_OSM_PROJECTION);
   const [modelInputsOpen, setModelInputsOpen] = useState(false);
   const [environmentOpen, setEnvironmentOpen] = useState(false);
   const [collapsedPanels, setCollapsedPanels] = useState({
@@ -128,6 +201,8 @@ export default function App() {
   const [layersResponse, setLayersResponse] = useState(null);
   const [layersLoading, setLayersLoading] = useState(false);
   const [layersError, setLayersError] = useState(null);
+  const [overviewBasemap, setOverviewBasemap] = useState(null);
+  const [overviewBasemapFailed, setOverviewBasemapFailed] = useState(false);
 
   const debouncedThreshold = useDebouncedValue(threshold, 350);
   const debouncedSampleIndex = useDebouncedValue(sampleIndex, 200);
@@ -220,6 +295,62 @@ export default function App() {
     };
   }, [catalogLimit, year]);
 
+  useEffect(() => {
+    setOverviewBasemap(null);
+    setOverviewBasemapFailed(false);
+  }, [year]);
+
+  useEffect(() => {
+    let ignore = false;
+    const controller = new AbortController();
+    const cacheKey = `${year}:${mapStyle}`;
+    const cachedBasemap = basemapCacheRef.current.get(cacheKey)
+      ?? readStoredOverviewBasemap(year, mapStyle);
+
+    setOverviewBasemapFailed(false);
+
+    if (mapProvider !== "gee") {
+      return () => {
+        ignore = true;
+        controller.abort();
+      };
+    }
+
+    if (cachedBasemap) {
+      basemapCacheRef.current.set(cacheKey, cachedBasemap);
+      setOverviewBasemap((current) => mergeOverviewBasemapTile(current, cachedBasemap));
+      return () => {
+        ignore = true;
+        controller.abort();
+      };
+    }
+
+    async function loadBasemap() {
+      try {
+        const payload = await fetchBasemap({
+          year,
+          style: mapStyle,
+          signal: controller.signal,
+        });
+        if (ignore) return;
+        basemapCacheRef.current.set(cacheKey, payload);
+        storeOverviewBasemap(year, payload);
+        setOverviewBasemap((current) => mergeOverviewBasemapTile(current, payload));
+      } catch (error) {
+        if (!ignore && error?.name !== "AbortError") {
+          console.warn("Unable to load overview basemap:", error);
+          setOverviewBasemapFailed(true);
+        }
+      }
+    }
+
+    loadBasemap();
+    return () => {
+      ignore = true;
+      controller.abort();
+    };
+  }, [mapProvider, mapStyle, year]);
+
   const filteredCatalog = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     if (!query) return catalog;
@@ -253,6 +384,17 @@ export default function App() {
   const selectedFire = useMemo(
     () => catalog.find((fire) => fire.fireId === selectedId) ?? null,
     [catalog, selectedId],
+  );
+  const mapInitialViewState = useMemo(
+    () =>
+      viewMode === "3d"
+        ? {
+            ...INITIAL_VIEW,
+            bearing: THREE_D_BEARING,
+            pitch: THREE_D_PITCH,
+          }
+        : INITIAL_VIEW,
+    [viewMode],
   );
 
   const overviewData = useMemo(
@@ -346,6 +488,7 @@ export default function App() {
           selectedId,
           debouncedSampleIndex,
           debouncedThreshold,
+          mapProvider,
           JSON.stringify(debouncedEnvironmentScales),
         ].join(":");
         const payload = layersCacheRef.current.get(layerCacheKey)
@@ -354,6 +497,7 @@ export default function App() {
             year,
             sampleIndex: debouncedSampleIndex,
             threshold: debouncedThreshold,
+            basemapProvider: mapProvider,
             environmentScales: debouncedEnvironmentScales,
             signal: controller.signal,
           });
@@ -377,14 +521,12 @@ export default function App() {
       ignore = true;
       controller.abort();
     };
-  }, [debouncedEnvironmentScales, debouncedSampleIndex, debouncedThreshold, sampleIndex, selectedId, year]);
+  }, [debouncedEnvironmentScales, debouncedSampleIndex, debouncedThreshold, mapProvider, sampleIndex, selectedId, year]);
 
   useEffect(() => {
-    if (!selectedFire || !mapRef.current) return;
-
-    const bbox = selectedFire.bbox;
-    const activeLayers = layersResponse?.layers ?? null;
     const map = mapRef.current;
+    if (!map) return;
+
     const horizontalPadding = Math.min(
       Math.max(Math.round(window.innerWidth * 0.16), 140),
       240,
@@ -395,7 +537,28 @@ export default function App() {
     );
     const bottomOverlayPadding = window.innerWidth <= 1100 ? 86 : 108;
 
-    map.invalidateSize?.();
+    if (!selectedFire) {
+      if (viewMode === "3d") {
+        map.resize?.();
+        map.easeTo?.({
+          center: [INITIAL_VIEW.longitude, INITIAL_VIEW.latitude],
+          zoom: INITIAL_VIEW.zoom,
+          bearing: THREE_D_BEARING,
+          pitch: THREE_D_PITCH,
+          duration: 900,
+        });
+      }
+      return;
+    }
+
+    const bbox = selectedFire.bbox;
+    const activeLayers = layersResponse?.layers ?? null;
+
+    if (viewMode === "2d") {
+      map.invalidateSize?.();
+    } else {
+      map.resize?.();
+    }
 
     const candidateFeatures = [
       ...(activeLayers?.predictionHeatmap?.features ?? []),
@@ -426,19 +589,40 @@ export default function App() {
         const latPad = Math.max((maxLat - minLat) * 0.35, 0.01);
         const lonPad = Math.max((maxLon - minLon) * 0.35, 0.01);
 
-        map.fitBounds(
-          [
-            [minLat - latPad, minLon - lonPad],
-            [maxLat + latPad, maxLon + lonPad],
-          ],
-          {
-            paddingTopLeft: [horizontalPadding, topPadding],
-            paddingBottomRight: [horizontalPadding, bottomOverlayPadding],
-            maxZoom: 13,
-            animate: true,
-            duration: 1,
-          },
-        );
+        if (viewMode === "2d") {
+          map.fitBounds(
+            [
+              [minLat - latPad, minLon - lonPad],
+              [maxLat + latPad, maxLon + lonPad],
+            ],
+            {
+              paddingTopLeft: [horizontalPadding, topPadding],
+              paddingBottomRight: [horizontalPadding, bottomOverlayPadding],
+              maxZoom: 13,
+              animate: true,
+              duration: 1,
+            },
+          );
+        } else {
+          map.fitBounds(
+            [
+              [minLon - lonPad, minLat - latPad],
+              [maxLon + lonPad, maxLat + latPad],
+            ],
+            {
+              padding: {
+                top: topPadding,
+                right: horizontalPadding,
+                bottom: bottomOverlayPadding,
+                left: horizontalPadding,
+              },
+              maxZoom: 13,
+              duration: 1000,
+              bearing: THREE_D_BEARING,
+              pitch: THREE_D_PITCH,
+            },
+          );
+        }
         return;
       }
     }
@@ -450,27 +634,58 @@ export default function App() {
       Number.isFinite(bbox.maxLon) &&
       Number.isFinite(bbox.maxLat)
     ) {
-      map.fitBounds(
-        [
-          [bbox.minLat, bbox.minLon],
-          [bbox.maxLat, bbox.maxLon],
-        ],
-        {
-          paddingTopLeft: [horizontalPadding, topPadding],
-          paddingBottomRight: [horizontalPadding, bottomOverlayPadding],
-          maxZoom: 12.5,
-          animate: true,
-          duration: 1,
-        },
-      );
+      if (viewMode === "2d") {
+        map.fitBounds(
+          [
+            [bbox.minLat, bbox.minLon],
+            [bbox.maxLat, bbox.maxLon],
+          ],
+          {
+            paddingTopLeft: [horizontalPadding, topPadding],
+            paddingBottomRight: [horizontalPadding, bottomOverlayPadding],
+            maxZoom: 12.5,
+            animate: true,
+            duration: 1,
+          },
+        );
+      } else {
+        map.fitBounds(
+          [
+            [bbox.minLon, bbox.minLat],
+            [bbox.maxLon, bbox.maxLat],
+          ],
+          {
+            padding: {
+              top: topPadding,
+              right: horizontalPadding,
+              bottom: bottomOverlayPadding,
+              left: horizontalPadding,
+            },
+            maxZoom: 12.5,
+            duration: 1000,
+            bearing: THREE_D_BEARING,
+            pitch: THREE_D_PITCH,
+          },
+        );
+      }
       return;
     }
 
-    map.flyTo([selectedFire.latitude, selectedFire.longitude], 8.2, {
-      animate: true,
-      duration: 1,
-    });
-  }, [layersResponse, selectedFire]);
+    if (viewMode === "2d") {
+      map.flyTo([selectedFire.latitude, selectedFire.longitude], 8.2, {
+        animate: true,
+        duration: 1,
+      });
+    } else {
+      map.flyTo({
+        center: [selectedFire.longitude, selectedFire.latitude],
+        zoom: 8.2,
+        bearing: THREE_D_BEARING,
+        pitch: THREE_D_PITCH,
+        duration: 1000,
+      });
+    }
+  }, [layersResponse, selectedFire, viewMode]);
 
   const currentFrame = useMemo(() => {
     if (!timeline?.frames?.length || sampleIndex === null || sampleIndex === undefined) {
@@ -549,6 +764,15 @@ export default function App() {
 
   const fireLayers = layersResponse?.layers ?? null;
   const fireBasemap = layersResponse?.basemap ?? null;
+  const activeBasemap = mapProvider === "gee" ? (fireBasemap ?? overviewBasemap ?? null) : null;
+  const hasActiveBasemapStyle =
+    mapProvider === "gee" &&
+    (Boolean(fireBasemap?.[mapStyle]) || Boolean(overviewBasemap?.[mapStyle]));
+  const allowFallbackBasemap =
+    mapProvider === "gee" &&
+    !fireBasemap &&
+    !hasActiveBasemapStyle &&
+    overviewBasemapFailed;
   const fireSummary = layersResponse?.summary ?? null;
   const insightFire = useMemo(() => {
     if (selectedFire && layersResponse?.fire) {
@@ -561,13 +785,17 @@ export default function App() {
     <div className="app-shell">
       <MapView
         mapRef={mapRef}
-        initialViewState={INITIAL_VIEW}
+        initialViewState={mapInitialViewState}
+        viewMode={viewMode}
+        mapProvider={mapProvider}
         mapStyle={mapStyle}
+        osmProjection={osmProjection}
         onOverviewSelect={handleSelectFire}
         overviewData={overviewData}
         selectedId={selectedId}
         selectedFire={selectedFire}
-        basemap={fireBasemap}
+        basemap={activeBasemap}
+        allowFallbackBasemap={allowFallbackBasemap}
         fireLayers={fireLayers}
         layerVisibility={layerVisibility}
       />
@@ -586,26 +814,64 @@ export default function App() {
         timelineLoading={timelineLoading}
       />
 
-      <FilterBar
-        year={year}
-        yearOptions={yearOptions}
-        onYearChange={setYear}
-        threshold={threshold}
-        onThresholdChange={setThreshold}
-        catalogLimit={catalogLimit}
-        onCatalogLimitChange={setCatalogLimit}
-        mapStyle={mapStyle}
-        mapStyles={MAP_STYLES}
-        onMapStyleChange={setMapStyle}
-        modelInputsOpen={modelInputsOpen}
-        onToggleModelInputs={() => setModelInputsOpen((open) => !open)}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-        layerVisibility={layerVisibility}
-        onToggleLayer={handleToggleLayer}
-        environmentOpen={environmentOpen}
-        onToggleEnvironment={() => setEnvironmentOpen((open) => !open)}
-      />
+      <div className="top-controls-layout app-overlay">
+        <FilterBar
+          year={year}
+          yearOptions={yearOptions}
+          onYearChange={setYear}
+          threshold={threshold}
+          onThresholdChange={setThreshold}
+          catalogLimit={catalogLimit}
+          onCatalogLimitChange={setCatalogLimit}
+          mapProvider={mapProvider}
+          onMapProviderChange={setMapProvider}
+          mapStyle={mapStyle}
+          mapStyles={MAP_STYLES}
+          onMapStyleChange={setMapStyle}
+          viewMode={viewMode}
+          osmProjection={osmProjection}
+          onOsmProjectionChange={setOsmProjection}
+          layerVisibility={layerVisibility}
+          onToggleLayer={handleToggleLayer}
+        />
+
+        <div className="control-actions-stack">
+          <div className="toolbar-actions">
+            <button
+              type="button"
+              className={modelInputsOpen ? "control-button active" : "control-button"}
+              onClick={() => setModelInputsOpen((open) => !open)}
+            >
+              Model inputs
+            </button>
+
+            <button
+              type="button"
+              className={environmentOpen ? "control-button active" : "control-button"}
+              onClick={() => setEnvironmentOpen((open) => !open)}
+            >
+              Environment
+            </button>
+
+            <div className="segmented-control">
+              <button
+                type="button"
+                className={viewMode === "2d" ? "active" : ""}
+                onClick={() => setViewMode("2d")}
+              >
+                2D
+              </button>
+              <button
+                type="button"
+                className={viewMode === "3d" ? "active" : ""}
+                onClick={() => setViewMode("3d")}
+              >
+                3D
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <ModelInputsPanel
         isOpen={modelInputsOpen}
