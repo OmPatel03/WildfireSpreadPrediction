@@ -52,7 +52,7 @@ model:
     required_img_size: null
     # Domain adversarial parameters
     enable_domain_head: true
-    domain_loss_weight: 0.01
+    domain_loss_weight: 0.005
     domain_loss_ramp_epochs: 0
     gradient_reversal_alpha: 1.0
     domain_mlp_hidden: 256
@@ -70,7 +70,7 @@ data:
   load_from_hdf5: true
   num_workers: 4
   remove_duplicate_features: false
-  features_to_keep: null
+  features_to_keep: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 38, 39]
   return_doy: false
   return_year: true
   data_fold_id: 0

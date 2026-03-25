@@ -11,13 +11,13 @@ trainer:
   gradient_clip_algorithm: "norm"
   enable_progress_bar: true
   enable_model_summary: true
-  logger: 
+  logger:
     class_path: pytorch_lightning.loggers.wandb.WandbLogger
     init_args:
       save_dir: "./lightning_logs"
       project: wildfire_progression
       log_model: true
-  callbacks: 
+  callbacks:
     - class_path: pytorch_lightning.callbacks.model_checkpoint.ModelCheckpoint
       init_args:
         monitor: val_AP
@@ -50,9 +50,8 @@ model:
     n_head: 16
     pos_class_weight: 0.01
     required_img_size: null
-    # Domain adversarial parameters
-    enable_domain_head: true
-    domain_loss_weight: 0.01
+    enable_domain_head: false
+    domain_loss_weight: 0.0
     domain_loss_ramp_epochs: 0
     gradient_reversal_alpha: 1.0
     domain_mlp_hidden: 256
@@ -60,6 +59,9 @@ model:
     enable_delta_head: false
     delta_loss_weight: 0.2
     delta_pos_weight_cap: 20.0
+    transform_fusion_mode: dct_hadamard
+    transform_fusion_hidden_dim: 128
+    transform_fusion_max_scale: 0.02
 
 data:
   data_dir: "/u50/capstone/cs4zp6g17/data/hdf5"
@@ -72,9 +74,8 @@ data:
   remove_duplicate_features: false
   features_to_keep: null
   return_doy: false
-  return_year: true
+  return_year: false
   data_fold_id: 0
-  # Optional: VQ-VAE / cluster-aware sampling (single-GPU only)
   enable_cluster_sampling: false
   cluster_assignments_path: null
   cluster_sampling_alpha: 1.0

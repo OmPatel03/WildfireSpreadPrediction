@@ -1,4 +1,5 @@
 import torch
+from typing import Optional
 from torch.nn.modules.loss import _Loss
 from segmentation_models_pytorch.losses import DiceLoss, FocalLoss
 
@@ -6,9 +7,9 @@ class FocalDiceLoss(_Loss):
     def __init__(
         self,
         mode: str = "binary",
-        alpha: float | None = None,
+        alpha: Optional[float] = None,
         gamma: float = 2.0,
-        ignore_index: int | None = None,
+        ignore_index: Optional[int] = None,
         from_logits: bool = True,
         smooth: float = 0.0,
         eps: float = 1e-7,

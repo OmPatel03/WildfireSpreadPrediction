@@ -1,7 +1,7 @@
 seed_everything: 0
 
 trainer:
-  max_epochs: 50
+  max_epochs: 75
   accelerator: "gpu"
   devices: [0, 1, 2, 3]
   default_root_dir: "./lightning_logs"
@@ -11,13 +11,13 @@ trainer:
   gradient_clip_algorithm: "norm"
   enable_progress_bar: true
   enable_model_summary: true
-  logger: 
+  logger:
     class_path: pytorch_lightning.loggers.wandb.WandbLogger
     init_args:
       save_dir: "./lightning_logs"
       project: wildfire_progression
       log_model: true
-  callbacks: 
+  callbacks:
     - class_path: pytorch_lightning.callbacks.model_checkpoint.ModelCheckpoint
       init_args:
         monitor: val_AP
@@ -26,7 +26,7 @@ trainer:
       init_args:
         monitor: val_AP
         mode: max
-        patience: 10
+        patience: 20
         min_delta: 0.001
 
 optimizer:
@@ -50,7 +50,6 @@ model:
     n_head: 16
     pos_class_weight: 0.01
     required_img_size: null
-    # Domain adversarial parameters
     enable_domain_head: true
     domain_loss_weight: 0.01
     domain_loss_ramp_epochs: 0
@@ -60,12 +59,21 @@ model:
     enable_delta_head: false
     delta_loss_weight: 0.2
     delta_pos_weight_cap: 20.0
+    enable_fire_reconstruction: true
+    fire_reconstruction_loss_weight: 0.1
+    fire_reconstruction_weight_schedule: "linear_decay"
+    fire_reconstruction_weight_final: 0.0
+    fire_reconstruction_weight_decay_epochs: 75
+    fire_mask_min_fraction: 0.25
+    fire_mask_max_fraction: 0.25
+    fire_mask_strategy: "frontier_rectangle"
+    fire_reconstruction_pos_weight: 4.0
 
 data:
   data_dir: "/u50/capstone/cs4zp6g17/data/hdf5"
-  batch_size: 8
-  n_leading_observations: 10
-  n_leading_observations_test_adjustment: 10
+  batch_size: 16
+  n_leading_observations: 5
+  n_leading_observations_test_adjustment: 5
   crop_side_length: 64
   load_from_hdf5: true
   num_workers: 4
@@ -74,7 +82,6 @@ data:
   return_doy: false
   return_year: true
   data_fold_id: 0
-  # Optional: VQ-VAE / cluster-aware sampling (single-GPU only)
   enable_cluster_sampling: false
   cluster_assignments_path: null
   cluster_sampling_alpha: 1.0

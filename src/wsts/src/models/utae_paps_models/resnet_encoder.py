@@ -1,4 +1,5 @@
 import torch.nn as nn
+from typing import Optional
 import segmentation_models_pytorch as smp
 
 
@@ -8,7 +9,7 @@ class SharedResNetEncoder(nn.Module):
         encoder_name: str,
         in_channels: int,
         depth: int = 5,
-        weights: str | None = "imagenet",
+        weights: Optional[str] = "imagenet",
         ltae_channels: int = 128,
     ):
         super().__init__()

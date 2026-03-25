@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 
 import matplotlib.pyplot as plt
 import torch
@@ -73,7 +73,7 @@ class ResNet18UTAELightning(BaseModel):
         # Segmentation Head
         self.segmentation_head = nn.Conv2d(16, 1, kernel_size=1)
 
-    def forward(self, x: torch.Tensor, doys: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, doys: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         Args:
             x: (B, T, C, H, W) - temporal sequence

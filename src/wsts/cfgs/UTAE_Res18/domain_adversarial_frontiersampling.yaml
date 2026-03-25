@@ -76,6 +76,13 @@ data:
   data_fold_id: 0
   # Optional: VQ-VAE / cluster-aware sampling (single-GPU only)
   enable_cluster_sampling: false
+  frontier_sampling_enabled: true
+  frontier_band_width: 16
+  frontier_boundary_ratio: 0.5
+  frontier_interior_ratio: 0.25
+  frontier_hard_negative_ratio: 0.25
+  frontier_center_jitter: 8
+  crop_search_trials: 10
   cluster_assignments_path: null
   cluster_sampling_alpha: 1.0
   cluster_sampling_min_count: 1

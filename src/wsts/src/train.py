@@ -1,20 +1,19 @@
 import argparse
 import json
+from typing import Any
 
-# --- Patch argparse for Python 3.12 + LightningCLI compatibility ---
-# Force _parse_known_args to always accept 'intermixed' keyword even if older call sites omit it
+# Python 3.12 argparse requires `_parse_known_args(..., intermixed)` without a default.
+# Some Lightning/jsonargparse call paths invoke it with 3 args. Add a backward-compat shim.
 if "intermixed" in argparse.ArgumentParser._parse_known_args.__code__.co_varnames:
-    # Already has the new signature (Python 3.12) — wrap for backward compatibility
     _orig_parse_known_args = argparse.ArgumentParser._parse_known_args
 
     def _parse_known_args_fixed(self, arg_strings, namespace, *args, **kwargs):
-        # Always provide default intermixed=False if caller doesn't specify it
-        if "intermixed" not in kwargs:
-            kwargs["intermixed"] = False
-        return _orig_parse_known_args(self, arg_strings, namespace, **kwargs)
+        if len(args) > 0:
+            return _orig_parse_known_args(self, arg_strings, namespace, *args, **kwargs)
+        intermixed = kwargs.pop("intermixed", False)
+        return _orig_parse_known_args(self, arg_strings, namespace, intermixed)
 
     argparse.ArgumentParser._parse_known_args = _parse_known_args_fixed
-# -------------------------------------------------------------------
 
 
 from pytorch_lightning.utilities import rank_zero_only
@@ -39,8 +38,6 @@ class MyLightningCLI(LightningCLI):
 
         parser.link_arguments("trainer.default_root_dir",
                               "trainer.logger.init_args.save_dir")
-        parser.link_arguments("model.class_path",
-                              "trainer.logger.init_args.name")
         parser.add_argument("--do_train", type=bool,
                             help="If True: skip training the model.")
         parser.add_argument("--do_predict", type=bool,
@@ -51,16 +48,43 @@ class MyLightningCLI(LightningCLI):
                             default=False, help="If True: compute val metrics.")
         parser.add_argument("--ckpt_path", type=str, default=None,
                             help="Path to checkpoint to load for resuming training, for testing and predicting.")
+        parser.add_argument("--init_ckpt_path", type=str, default=None,
+                            help="Path to checkpoint whose model weights should be loaded before training without resuming trainer state.")
         parser.add_argument("--metrics_output_path", type=str, default=None,
                     help="Optional JSON output path for test metrics.")
                             
     def before_instantiate_classes(self):
+        # jsonargparse may hand us list-like objects here; normalize once so feature
+        # counting and downstream indexing agree on the same representation.
+        degree_encoding = getattr(self.config.data, "degree_encoding", "sin")
+        features_to_keep = self.config.data.features_to_keep
+        if features_to_keep is None or isinstance(features_to_keep, str):
+            normalized_features_to_keep = None
+        else:
+            normalized_features_to_keep = list(features_to_keep)
+        self.config.data.features_to_keep = normalized_features_to_keep
+
         # The number of features is only known inside the data module, but we need that info to instantiate the model.
         # Since datamodule and model are instantiated at the same time with LightningCLI, we need to set the number of features here.
-        n_features = FireSpreadDataset.get_n_features(
-            self.config.data.n_leading_observations,
-            self.config.data.features_to_keep,
-            self.config.data.remove_duplicate_features)
+        if self.config.model.init_args.flatten_temporal_dimension:
+            n_features = FireSpreadDataset.get_n_features(
+                self.config.data.n_leading_observations,
+                normalized_features_to_keep,
+                self.config.data.remove_duplicate_features,
+                degree_encoding=degree_encoding,
+            )
+        else:
+            # UTAE-style models consume one timestep at a time, so they expect
+            # the per-frame feature count rather than the flattened sequence size.
+            if normalized_features_to_keep is None:
+                n_features = FireSpreadDataset.get_n_features(
+                    1,
+                    None,
+                    False,
+                    degree_encoding=degree_encoding,
+                )
+            else:
+                n_features = len(normalized_features_to_keep)
         self.config.model.init_args.n_channels = n_features
 
         # The exact positive class weight changes with the data fold in the data module, but the weight is needed to instantiate the model.
@@ -93,7 +117,10 @@ class MyLightningCLI(LightningCLI):
         last known values, which is not what we want.
         """
         if wandb.run is None:
-            wandb.init(project="WildfireSpreadPrediction", name="manual_init")
+            wandb.init(
+                project=os.getenv("WANDB_PROJECT", "WildfireSpreadPrediction"),
+                name=os.getenv("WANDB_NAME"),
+            )
         config_file_name = os.path.join(wandb.run.dir, "cli_config.yaml")
 
         cfg_string = self.parser.dump(self.config, skip_none=False)
@@ -102,10 +129,19 @@ class MyLightningCLI(LightningCLI):
         wandb.save(config_file_name, policy="now", base_path=wandb.run.dir)
         wandb.define_metric("train_loss_epoch", summary="min")
         wandb.define_metric("val_loss", summary="min")
+        wandb.define_metric("test_loss", summary="min")
         wandb.define_metric("train_f1_epoch", summary="max")
         wandb.define_metric("val_f1", summary="max")
+        wandb.define_metric("val_precision", summary="max")
+        wandb.define_metric("val_recall", summary="max")
+        wandb.define_metric("val_iou", summary="max")
         wandb.define_metric("train_AP_epoch", summary="max")
         wandb.define_metric("val_AP", summary="max")
+        wandb.define_metric("test_f1", summary="max")
+        wandb.define_metric("test_AP", summary="max")
+        wandb.define_metric("test_precision", summary="max")
+        wandb.define_metric("test_recall", summary="max")
+        wandb.define_metric("test_iou", summary="max")
 
 
 def main():
@@ -115,6 +151,19 @@ def main():
     cli = MyLightningCLI(BaseModel, FireSpreadDataModule, subclass_mode_model=True, save_config_kwargs={
         "overwrite": True}, parser_kwargs={"parser_mode": "yaml"}, run=False)
     cli.wandb_setup()
+
+    if cli.config.ckpt_path is not None and cli.config.init_ckpt_path is not None:
+        raise ValueError("Use either --ckpt_path for full resume or --init_ckpt_path for weights-only initialization, not both.")
+
+    if cli.config.init_ckpt_path is not None:
+        checkpoint: dict[str, Any] = torch.load(cli.config.init_ckpt_path, map_location="cpu")
+        state_dict = checkpoint.get("state_dict", checkpoint)
+        missing_keys, unexpected_keys = cli.model.load_state_dict(state_dict, strict=False)
+        print(f"initialized_from_checkpoint={cli.config.init_ckpt_path}")
+        if len(missing_keys) > 0:
+            print(f"missing_keys={missing_keys}")
+        if len(unexpected_keys) > 0:
+            print(f"unexpected_keys={unexpected_keys}")
 
     if cli.config.do_train:
         cli.trainer.fit(cli.model, cli.datamodule,

@@ -57,7 +57,7 @@ model:
     gradient_reversal_alpha: 1.0
     domain_mlp_hidden: 256
     n_years: 8
-    enable_delta_head: false
+    enable_delta_head: true
     delta_loss_weight: 0.2
     delta_pos_weight_cap: 20.0
 

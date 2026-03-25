@@ -12,8 +12,14 @@ from segmentation_models_pytorch.losses import (DiceLoss, JaccardLoss,
                                                 LovaszLoss)
 from torchvision.ops import sigmoid_focal_loss
 from .losses.FocalDiceLoss import FocalDiceLoss
-from .losses.FrontAwareFocalDiceLoss import FrontAwareFocalDiceLoss
-from .losses.FocalTverskyLoss import FocalTverskyLoss
+try:
+    from .losses.FrontAwareFocalDiceLoss import FrontAwareFocalDiceLoss
+except ImportError:
+    FrontAwareFocalDiceLoss = None
+try:
+    from .losses.FocalTverskyLoss import FocalTverskyLoss
+except ImportError:
+    FocalTverskyLoss = None
 
 
 class BaseModel(pl.LightningModule, ABC):
@@ -62,9 +68,14 @@ class BaseModel(pl.LightningModule, ABC):
 
         self.train_f1 = torchmetrics.F1Score("binary")
         self.train_avg_precision = torchmetrics.AveragePrecision("binary")
-        self.val_avg_precision = torchmetrics.AveragePrecision("binary")
-        self.test_f1 = self.train_f1.clone()
 
+        self.val_f1 = torchmetrics.F1Score("binary")
+        self.val_avg_precision = torchmetrics.AveragePrecision("binary")
+        self.val_precision = torchmetrics.Precision("binary")
+        self.val_recall = torchmetrics.Recall("binary")
+        self.val_iou = torchmetrics.JaccardIndex("binary")
+
+        self.test_f1 = torchmetrics.F1Score("binary")
         self.test_avg_precision = torchmetrics.AveragePrecision("binary")
         self.test_precision = torchmetrics.Precision("binary")
         self.test_recall = torchmetrics.Recall("binary")
@@ -212,7 +223,11 @@ class BaseModel(pl.LightningModule, ABC):
         y_hat, y, prev_fire = self.get_pred_and_gt(batch)
 
         loss = self.compute_loss(y_hat, y, prev_fire)
+        self.val_f1(y_hat, y)
         self.val_avg_precision(y_hat, y)
+        self.val_precision(y_hat, y)
+        self.val_recall(y_hat, y)
+        self.val_iou(y_hat, y)
         self.log(
             "val_loss",
             loss.item(),
@@ -223,13 +238,50 @@ class BaseModel(pl.LightningModule, ABC):
             sync_dist=True,
         )
         self.log(
+            "val_f1",
+            self.val_f1,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+            sync_dist=True,
+        )
+        self.log(
             "val_AP",
             self.val_avg_precision,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=True,
-        )  
+            sync_dist=True,
+        )
+        self.log(
+            "val_precision",
+            self.val_precision,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+            sync_dist=True,
+        )
+        self.log(
+            "val_recall",
+            self.val_recall,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+            sync_dist=True,
+        )
+        self.log(
+            "val_iou",
+            self.val_iou,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+            sync_dist=True,
+        )
         return loss
 
     def test_step(self, batch, batch_idx):
@@ -303,6 +355,12 @@ class BaseModel(pl.LightningModule, ABC):
             return FocalDiceLoss(mode="binary", alpha = 1 - self.hparams.pos_class_weight, 
                                  gamma=2,focal_weight=0.5, dice_weight=0.5)
         elif self.hparams.loss_function == "FrontAwareFocalDice":
+            if FrontAwareFocalDiceLoss is None:
+                raise ImportError(
+                    "FrontAwareFocalDiceLoss is not available. "
+                    "Please add src/wsts/src/models/losses/FrontAwareFocalDiceLoss.py "
+                    "or choose a different loss_function."
+                )
             return FrontAwareFocalDiceLoss(
                 mode="binary",
                 alpha=1 - self.hparams.pos_class_weight,
@@ -314,6 +372,12 @@ class BaseModel(pl.LightningModule, ABC):
                 band_width=3,
             )
         elif self.hparams.loss_function == "FocalTversky":
+            if FocalTverskyLoss is None:
+                raise ImportError(
+                    "FocalTverskyLoss is not available. "
+                    "Please add src/wsts/src/models/losses/FocalTverskyLoss.py "
+                    "or choose a different loss_function."
+                )
             return FocalTverskyLoss(
                 alpha=self.hparams.pos_class_weight,
                 beta=1.0 - self.hparams.pos_class_weight,

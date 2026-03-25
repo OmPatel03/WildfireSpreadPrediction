@@ -2,14 +2,13 @@ accelerator: gpu
 strategy: auto
 devices: 1
 num_nodes: 1
-#precision: 32-true
-logger: 
+logger:
   class_path: pytorch_lightning.loggers.wandb.WandbLogger
   init_args:
     project: wildfire_progression
     name: spatial
     log_model: true
-callbacks: 
+callbacks:
   - class_path: pytorch_lightning.callbacks.model_checkpoint.ModelCheckpoint
     init_args:
       monitor: val_AP
@@ -20,10 +19,10 @@ callbacks:
     init_args:
       monitor: val_AP
       mode: max
-      patience: 12
+      patience: 20
       min_delta: 0.001
 fast_dev_run: false
-max_epochs: 100
+max_epochs: 150
 min_epochs: -1
 max_steps: -1
 min_steps: -1
@@ -32,7 +31,7 @@ limit_train_batches: null
 limit_val_batches: null
 limit_test_batches: null
 limit_predict_batches: null
-overfit_batches: 0.0 # off
+overfit_batches: 0.0
 val_check_interval: null
 check_val_every_n_epoch: 1
 num_sanity_val_steps: null

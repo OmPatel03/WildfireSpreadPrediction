@@ -41,7 +41,7 @@ model:
   class_path: DomainAdversarialUTAELightning
   init_args:
     flatten_temporal_dimension: false
-    loss_function: "FocalDice"
+    loss_function: "FrontAwareFocalDice"
     encoder_name: "resnet18"
     encoder_weights: "imagenet"
     ltae_channels: 128
