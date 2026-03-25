@@ -174,27 +174,6 @@ class FireLayers(BaseModel):
         populate_by_name = True
 
 
-class FireBasemap(BaseModel):
-    satellite: str
-    terrain: str
-    outdoors: str
-    attribution: str
-    target_date: Optional[str] = Field(default=None, alias="targetDate")
-
-    class Config:
-        populate_by_name = True
-
-
-class BasemapTileResponse(BaseModel):
-    style: str
-    url: str
-    attribution: str
-    target_date: Optional[str] = Field(default=None, alias="targetDate")
-
-    class Config:
-        populate_by_name = True
-
-
 class FireLayersResponse(BaseModel):
     fire: WildfireSummary
     sample_index: int = Field(alias="sampleIndex")
@@ -204,7 +183,6 @@ class FireLayersResponse(BaseModel):
     target_date: Optional[str] = Field(alias="targetDate")
     summary: PredictionSummary
     layers: FireLayers
-    basemap: Optional[FireBasemap] = None
     geojson: Dict[str, Any]
 
     class Config:
@@ -226,7 +204,6 @@ class FireLayersResponse(BaseModel):
             targetDate=prediction.target_date,
             summary=geojson["features"][0]["properties"]["summary"],
             layers=layers,
-            basemap=layers.get("basemap"),
             geojson=geojson,
         )
 

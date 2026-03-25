@@ -3,11 +3,9 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-import torch
 
 from .config import Settings, get_settings
 from .domain import SpreadPrediction
-from .gee_basemap import build_bbox_basemap, build_bbox_basemap_tile, build_fire_basemap
 from .geojson import build_geojson, build_layer_collection, build_model_input_layer_collection
 from .model_loader import get_model
 from .preprocessing import PreprocessedSample, SamplePreprocessor
@@ -68,42 +66,6 @@ class WildfireService:
         self, year: Optional[int] = None, limit: int = 200, offset: int = 0
     ) -> List[WildfireMetadata]:
         return self.catalog(year=year, limit=limit, offset=offset)
-
-    def overview_basemap(
-        self,
-        year: Optional[int] = None,
-        style: str = "satellite",
-    ) -> Dict[str, object]:
-        target_year = year or self._settings.default_year
-        entries = [
-            entry
-            for entry in self._repository.list_year(target_year)
-            if entry.has_positive_target
-        ]
-        if not entries:
-            raise FileNotFoundError(f"No positive-target fires found for {target_year}.")
-
-        min_lon = min(entry.bbox[0] for entry in entries)
-        min_lat = min(entry.bbox[1] for entry in entries)
-        max_lon = max(entry.bbox[2] for entry in entries)
-        max_lat = max(entry.bbox[3] for entry in entries)
-        target_dates = sorted(
-            {
-                entry.img_dates[-1]
-                for entry in entries
-                if entry.img_dates and entry.img_dates[-1]
-            }
-        )
-        target_date = target_dates[-1] if target_dates else None
-
-        return build_bbox_basemap_tile(
-            min_lon,
-            min_lat,
-            max_lon,
-            max_lat,
-            target_date,
-            style,
-        )
 
     def timeline(
         self, fire_id: str, year: Optional[int] = None
@@ -192,7 +154,6 @@ class WildfireService:
         threshold: Optional[float] = None,
         model_input: Optional[str] = None,
         environment_scales: Optional[Dict[str, float]] = None,
-        basemap_provider: str = "gee",
     ) -> Tuple[SpreadPrediction, Dict, Dict]:
         _ = model_input
         requested_sample = -1 if sample_index is None else sample_index
@@ -224,13 +185,6 @@ class WildfireService:
             prediction,
             model_input_arrays,
         )
-        if basemap_provider.lower() == "gee":
-            layers["basemap"] = build_fire_basemap(
-                prediction.metadata,
-                prediction.target_date,
-            )
-        else:
-            layers["basemap"] = None
         return prediction, geojson, layers
 
     def _infer(self, sample: PreprocessedSample) -> np.ndarray:

@@ -29,9 +29,7 @@ const EMPTY_FEATURE_COLLECTION = {
 };
 
 const OVERVIEW_LAYER_ID = "overview-circles";
-const PREDICTION_POINT_LAYER_ID = "prediction-points-3d";
 const PREDICTION_HEAT_LAYER_ID = "prediction-heat-2d";
-const GROUND_TRUTH_POINT_LAYER_ID = "ground-truth-points-3d";
 const GROUND_TRUTH_HEAT_LAYER_ID = "ground-truth-heat-2d";
 const DIFFERENCE_POINT_LAYER_ID = "difference-points-3d";
 const PREDICTION_POLYGON_EXTRUSION_LAYER_ID = "prediction-polygons-3d";
@@ -671,29 +669,18 @@ export default function MapView({
   mapRef,
   initialViewState,
   viewMode,
-  mapProvider,
-  mapStyle,
   osmMapStyle,
   osmProjection,
   onOverviewSelect,
   overviewData,
   selectedId,
   selectedFire,
-  basemap,
-  allowFallbackBasemap = false,
   fireLayers,
   selectedFireLoading = false,
   layerVisibility,
 }) {
   const selectedExtentData = buildSelectedExtentGeojson(selectedFire);
   const selectedOriginData = buildSelectedOriginGeojson(selectedFire);
-  const hasFullBasemapSet =
-    Boolean(basemap?.satellite) &&
-    Boolean(basemap?.terrain) &&
-    Boolean(basemap?.outdoors);
-  const basemapUrl = mapProvider === "gee"
-    ? (basemap?.[mapStyle] ?? (hasFullBasemapSet ? basemap?.satellite : null))
-    : null;
   const osmTileConfig = osmMapStyle === "terrain"
     ? {
         tiles: OSM_TERRAIN_BASEMAP_TILES,
@@ -706,20 +693,10 @@ export default function MapView({
         maxZoom: OSM_STANDARD_BASEMAP_MAX_ZOOM,
       };
   const mapProjection =
-    mapProvider === "osm" && osmProjection === "globe" ? "globe" : "mercator";
-  const tileUrls = mapProvider === "osm"
-    ? osmTileConfig.tiles
-    : basemapUrl
-      ? [basemapUrl]
-      : allowFallbackBasemap
-        ? OSM_STANDARD_BASEMAP_TILES
-        : [];
-  const tileAttribution = mapProvider === "osm"
-    ? osmTileConfig.attribution
-    : basemap?.attribution ?? (tileUrls.length ? OSM_STANDARD_BASEMAP_ATTRIBUTION : undefined);
-  const tileMaxZoom = mapProvider === "osm"
-    ? osmTileConfig.maxZoom
-    : OSM_STANDARD_BASEMAP_MAX_ZOOM;
+    osmProjection === "globe" ? "globe" : "mercator";
+  const tileUrls = osmTileConfig.tiles;
+  const tileAttribution = osmTileConfig.attribution;
+  const tileMaxZoom = osmTileConfig.maxZoom;
   const predictionHeatmapData = fireLayers?.predictionHeatmap ?? EMPTY_FEATURE_COLLECTION;
   const groundTruthData = fireLayers?.groundTruthHeatmap ?? EMPTY_FEATURE_COLLECTION;
   const differenceData = fireLayers?.differenceHeatmap ?? EMPTY_FEATURE_COLLECTION;

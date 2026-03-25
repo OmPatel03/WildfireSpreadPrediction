@@ -15,7 +15,6 @@ def _resolve_path(value: Path) -> Path:
 class Settings(BaseModel):
     model_path: Path = Field(...)
     hdf5_root: Path = Field(...)
-    gee_project: str = Field(default="ee-neeljos24")
     stats_years: Tuple[int, int] = Field(default=(2018, 2019))
     default_year: int = Field(default=2021, ge=2018)
     n_leading_observations: int = Field(default=1, ge=1)
@@ -52,7 +51,6 @@ def _build_settings() -> Settings:
     return Settings(
         model_path=model_path,
         hdf5_root=hdf5_root,
-        gee_project=os.getenv("EE_PROJECT", "ee-neeljos24"),
         stats_years=stats_years,
         default_year=int(os.getenv("WILDFIRE_DEFAULT_YEAR", 2021)),
         n_leading_observations=int(os.getenv("WILDFIRE_N_LEADS", 1)),

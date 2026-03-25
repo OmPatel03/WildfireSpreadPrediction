@@ -8,7 +8,6 @@ import MapView from "./components/MapView";
 import ModelInputsPanel from "./components/ModelInputsPanel";
 import TimelineDock from "./components/TimelineDock";
 import {
-  fetchBasemap,
   fetchLayers,
   fetchOverview,
   fetchTimeline,
@@ -22,7 +21,6 @@ const DEFAULT_CATALOG_LIMIT = 100;
 const PAGE_SIZE = 8;
 const THREE_D_BEARING = -20;
 const THREE_D_PITCH = 55;
-const DEFAULT_MAP_PROVIDER = "osm";
 const DEFAULT_OSM_PROJECTION = "mercator";
 const INITIAL_VIEW = {
   longitude: -100,
@@ -31,18 +29,12 @@ const INITIAL_VIEW = {
   bearing: 0,
   pitch: 0,
 };
-const MAP_STYLES = [
-  { value: "satellite", label: "Satellite" },
-  { value: "outdoors", label: "Outdoors" },
-  { value: "terrain", label: "Terrain" },
-];
 const OSM_MAP_STYLES = [
   { value: "standard", label: "Standard" },
   { value: "terrain", label: "Terrain" },
 ];
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN ?? "";
 const FALLBACK_YEAR_OPTIONS = [DEFAULT_YEAR];
-const OVERVIEW_BASEMAP_CACHE_TTL_MS = 1000 * 60 * 60 * 6;
 const DEFAULT_ENVIRONMENT_SCALES = {
   viirs_m11: 1,
   viirs_i2: 1,
@@ -101,70 +93,8 @@ function buildOverviewGeojson(fires) {
   };
 }
 
-function getOverviewBasemapStorageKey(year, style) {
-  return `wildfire-overview-basemap:${year}:${style}`;
-}
-
-function readStoredOverviewBasemap(year, style) {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const raw = window.localStorage.getItem(getOverviewBasemapStorageKey(year, style));
-    if (!raw) return null;
-
-    const parsed = JSON.parse(raw);
-    if (!parsed?.url || parsed?.style !== style) {
-      window.localStorage.removeItem(getOverviewBasemapStorageKey(year, style));
-      return null;
-    }
-
-    if (!Number.isFinite(parsed?.savedAt)) {
-      window.localStorage.removeItem(getOverviewBasemapStorageKey(year, style));
-      return null;
-    }
-
-    if (Date.now() - parsed.savedAt > OVERVIEW_BASEMAP_CACHE_TTL_MS) {
-      window.localStorage.removeItem(getOverviewBasemapStorageKey(year, style));
-      return null;
-    }
-
-    return parsed;
-  } catch (error) {
-    console.warn("Unable to read cached overview basemap:", error);
-    return null;
-  }
-}
-
-function storeOverviewBasemap(year, payload) {
-  if (typeof window === "undefined" || !payload?.style || !payload?.url) return;
-
-  try {
-    window.localStorage.setItem(
-      getOverviewBasemapStorageKey(year, payload.style),
-      JSON.stringify({
-        ...payload,
-        savedAt: Date.now(),
-      }),
-    );
-  } catch (error) {
-    console.warn("Unable to cache overview basemap:", error);
-  }
-}
-
-function mergeOverviewBasemapTile(current, payload) {
-  if (!payload?.style || !payload?.url) return current;
-
-  return {
-    ...(current ?? {}),
-    [payload.style]: payload.url,
-    attribution: payload.attribution,
-    targetDate: payload.targetDate,
-  };
-}
-
 export default function App() {
   const mapRef = useRef(null);
-  const basemapCacheRef = useRef(new Map());
   const timelineCacheRef = useRef(new Map());
   const layersCacheRef = useRef(new Map());
 
@@ -178,8 +108,6 @@ export default function App() {
   const [sampleIndex, setSampleIndex] = useState(null);
   const [viewMode, setViewMode] = useState("2d");
   const [incidentsView, setIncidentsView] = useState("catalog");
-  const [mapProvider, setMapProvider] = useState(DEFAULT_MAP_PROVIDER);
-  const [mapStyle, setMapStyle] = useState(MAP_STYLES[0].value);
   const [osmMapStyle, setOsmMapStyle] = useState(OSM_MAP_STYLES[0].value);
   const [osmProjection, setOsmProjection] = useState(DEFAULT_OSM_PROJECTION);
   const [modelInputsOpen, setModelInputsOpen] = useState(false);
@@ -204,8 +132,6 @@ export default function App() {
   const [layersLoading, setLayersLoading] = useState(false);
   const [layersError, setLayersError] = useState(null);
   const [selectedFireLoadingId, setSelectedFireLoadingId] = useState(null);
-  const [overviewBasemap, setOverviewBasemap] = useState(null);
-  const [overviewBasemapFailed, setOverviewBasemapFailed] = useState(false);
 
   const debouncedThreshold = useDebouncedValue(threshold, 350);
   const debouncedSampleIndex = useDebouncedValue(sampleIndex, 200);
@@ -297,62 +223,6 @@ export default function App() {
       geocodeController.abort();
     };
   }, [catalogLimit, year]);
-
-  useEffect(() => {
-    setOverviewBasemap(null);
-    setOverviewBasemapFailed(false);
-  }, [year]);
-
-  useEffect(() => {
-    let ignore = false;
-    const controller = new AbortController();
-    const cacheKey = `${year}:${mapStyle}`;
-    const cachedBasemap = basemapCacheRef.current.get(cacheKey)
-      ?? readStoredOverviewBasemap(year, mapStyle);
-
-    setOverviewBasemapFailed(false);
-
-    if (mapProvider !== "gee") {
-      return () => {
-        ignore = true;
-        controller.abort();
-      };
-    }
-
-    if (cachedBasemap) {
-      basemapCacheRef.current.set(cacheKey, cachedBasemap);
-      setOverviewBasemap((current) => mergeOverviewBasemapTile(current, cachedBasemap));
-      return () => {
-        ignore = true;
-        controller.abort();
-      };
-    }
-
-    async function loadBasemap() {
-      try {
-        const payload = await fetchBasemap({
-          year,
-          style: mapStyle,
-          signal: controller.signal,
-        });
-        if (ignore) return;
-        basemapCacheRef.current.set(cacheKey, payload);
-        storeOverviewBasemap(year, payload);
-        setOverviewBasemap((current) => mergeOverviewBasemapTile(current, payload));
-      } catch (error) {
-        if (!ignore && error?.name !== "AbortError") {
-          console.warn("Unable to load overview basemap:", error);
-          setOverviewBasemapFailed(true);
-        }
-      }
-    }
-
-    loadBasemap();
-    return () => {
-      ignore = true;
-      controller.abort();
-    };
-  }, [mapProvider, mapStyle, year]);
 
   const filteredCatalog = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -505,7 +375,6 @@ export default function App() {
           selectedId,
           debouncedSampleIndex,
           debouncedThreshold,
-          mapProvider,
           JSON.stringify(debouncedEnvironmentScales),
         ].join(":");
         const payload = layersCacheRef.current.get(layerCacheKey)
@@ -514,7 +383,6 @@ export default function App() {
             year,
             sampleIndex: debouncedSampleIndex,
             threshold: debouncedThreshold,
-            basemapProvider: mapProvider,
             environmentScales: debouncedEnvironmentScales,
             signal: controller.signal,
           });
@@ -538,7 +406,7 @@ export default function App() {
       ignore = true;
       controller.abort();
     };
-  }, [debouncedEnvironmentScales, debouncedSampleIndex, debouncedThreshold, mapProvider, sampleIndex, selectedId, year]);
+  }, [debouncedEnvironmentScales, debouncedSampleIndex, debouncedThreshold, sampleIndex, selectedId, year]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -745,18 +613,8 @@ export default function App() {
   };
 
   const fireLayers = layersResponse?.layers ?? null;
-  const fireBasemap = layersResponse?.basemap ?? null;
   const selectedFireLoading =
     Boolean(selectedId) && selectedFireLoadingId === selectedId;
-  const activeBasemap = mapProvider === "gee" ? (fireBasemap ?? overviewBasemap ?? null) : null;
-  const hasActiveBasemapStyle =
-    mapProvider === "gee" &&
-    (Boolean(fireBasemap?.[mapStyle]) || Boolean(overviewBasemap?.[mapStyle]));
-  const allowFallbackBasemap =
-    mapProvider === "gee" &&
-    !fireBasemap &&
-    !hasActiveBasemapStyle &&
-    overviewBasemapFailed;
   const fireSummary = layersResponse?.summary ?? null;
   const insightFire = useMemo(() => {
     if (selectedFire && layersResponse?.fire) {
@@ -771,16 +629,12 @@ export default function App() {
         mapRef={mapRef}
         initialViewState={mapInitialViewState}
         viewMode={viewMode}
-        mapProvider={mapProvider}
-        mapStyle={mapStyle}
         osmMapStyle={osmMapStyle}
         osmProjection={osmProjection}
         onOverviewSelect={handleSelectFire}
         overviewData={overviewData}
         selectedId={selectedId}
         selectedFire={selectedFire}
-        basemap={activeBasemap}
-        allowFallbackBasemap={allowFallbackBasemap}
         fireLayers={fireLayers}
         selectedFireLoading={selectedFireLoading}
         layerVisibility={layerVisibility}
@@ -809,11 +663,6 @@ export default function App() {
           onThresholdChange={setThreshold}
           catalogLimit={catalogLimit}
           onCatalogLimitChange={setCatalogLimit}
-          mapProvider={mapProvider}
-          onMapProviderChange={setMapProvider}
-          mapStyle={mapStyle}
-          mapStyles={MAP_STYLES}
-          onMapStyleChange={setMapStyle}
           osmMapStyle={osmMapStyle}
           osmMapStyles={OSM_MAP_STYLES}
           onOsmMapStyleChange={setOsmMapStyle}

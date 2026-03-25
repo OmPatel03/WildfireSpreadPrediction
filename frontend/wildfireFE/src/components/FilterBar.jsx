@@ -11,11 +11,9 @@ const LAYER_OPTIONS = [
 const CONTROL_TOOLTIPS = {
   year: "Choose which wildfire season to browse and analyze.",
   catalogLimit: "Set how many incidents are loaded into the catalog for this year.",
-  gee: "Use Google Earth Engine imagery for the basemap.",
-  osm: "Use OpenStreetMap-based tiles for fast standard and terrain basemaps.",
-  basemap: "Pick the imagery style behind the wildfire layers for the current map provider.",
-  flatProjection: "Show the OSM 3D map in the standard flat mercator projection.",
-  globeProjection: "Wrap the OSM 3D map onto a globe projection.",
+  basemap: "Pick the OpenStreetMap basemap style behind the wildfire layers.",
+  flatProjection: "Show the 3D map in the standard flat mercator projection.",
+  globeProjection: "Wrap the 3D map onto a globe projection.",
   threshold: "Adjust the prediction cutoff used for the selected fire's spread layers.",
 };
 
@@ -37,11 +35,6 @@ export default function FilterBar({
   onThresholdChange,
   catalogLimit,
   onCatalogLimitChange,
-  mapProvider,
-  onMapProviderChange,
-  mapStyle,
-  mapStyles,
-  onMapStyleChange,
   osmMapStyle,
   osmMapStyles,
   onOsmMapStyleChange,
@@ -51,11 +44,7 @@ export default function FilterBar({
   layerVisibility,
   onToggleLayer,
 }) {
-  const visibleMapStyles = mapProvider === "osm"
-    ? osmMapStyles
-    : mapStyles;
-  const visibleMapStyleValue = mapProvider === "osm" ? osmMapStyle : mapStyle;
-  const showOsmProjectionControl = mapProvider === "osm" && viewMode === "3d";
+  const showOsmProjectionControl = viewMode === "3d";
 
   return (
     <div className="top-bar">
@@ -108,44 +97,15 @@ export default function FilterBar({
             </div>
           </div>
 
-          <div className="control-group compact provider-group">
-            <label>Map Provider</label>
-            <div className="segmented-control" role="group" aria-label="Map provider">
-              <button
-                type="button"
-                className={"tooltip-anchor" + (mapProvider === "gee" ? " active" : "")}
-                data-tooltip={CONTROL_TOOLTIPS.gee}
-                onClick={() => onMapProviderChange("gee")}
-              >
-                GEE
-              </button>
-              <button
-                type="button"
-                className={"tooltip-anchor" + (mapProvider === "osm" ? " active" : "")}
-                data-tooltip={CONTROL_TOOLTIPS.osm}
-                onClick={() => onMapProviderChange("osm")}
-              >
-                OSM
-              </button>
-            </div>
-          </div>
-
           <div className="control-group compact">
             <label htmlFor="map-style">Basemap</label>
             <div className="control-input-anchor tooltip-anchor" data-tooltip={CONTROL_TOOLTIPS.basemap}>
               <select
                 id="map-style"
-                value={visibleMapStyleValue}
-                onChange={(event) => {
-                  const nextValue = event.target.value;
-                  if (mapProvider === "osm") {
-                    onOsmMapStyleChange(nextValue);
-                  } else {
-                    onMapStyleChange(nextValue);
-                  }
-                }}
+                value={osmMapStyle}
+                onChange={(event) => onOsmMapStyleChange(event.target.value)}
               >
-                {visibleMapStyles.map((style) => (
+                {osmMapStyles.map((style) => (
                   <option key={style.value} value={style.value}>
                     {style.label}
                   </option>
