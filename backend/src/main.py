@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+import math
+import time
 from typing import List
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -17,10 +21,13 @@ from wildfire_api.schemas import (
     WildfireSummary,
 )
 
+logger = logging.getLogger("wildfire_api.inference")
+
 
 def create_app() -> FastAPI:
     settings = get_settings()
     service = WildfireService(settings)
+    infer_semaphore = asyncio.Semaphore(settings.infer_max_concurrency)
 
     app = FastAPI(
         title="Wildfire Spread Service",
@@ -28,6 +35,7 @@ def create_app() -> FastAPI:
         description="FastAPI + GraphQL gateway for wildfire spread predictions.",
     )
     app.state.service = service
+    app.state.infer_semaphore = infer_semaphore
 
     app.add_middleware(
         CORSMiddleware,
@@ -67,14 +75,23 @@ def create_app() -> FastAPI:
 
     @app.post("/findSpread", response_model=SpreadResponse)
     async def find_spread(request: SpreadRequest) -> SpreadResponse:
-        prediction, geojson = await run_in_threadpool(
-            service.find_spread,
-            request.fire_id,
-            request.year,
-            request.sample_offset,
-            request.threshold,
-        )
-        return SpreadResponse.from_prediction(prediction, geojson)
+        queue_wait_ms = await _acquire_inference_slot("/findSpread")
+        started = time.perf_counter()
+        try:
+            prediction, geojson = await run_in_threadpool(
+                service.find_spread,
+                request.fire_id,
+                request.year,
+                request.sample_offset,
+                request.threshold,
+            )
+            return SpreadResponse.from_prediction(prediction, geojson)
+        finally:
+            _release_inference_slot(
+                route_name="/findSpread",
+                queue_wait_ms=queue_wait_ms,
+                started=started,
+            )
 
     @app.get("/fires/{fire_id}/timeline", response_model=TimelineResponse)
     async def fire_timeline(
@@ -102,23 +119,72 @@ def create_app() -> FastAPI:
         precip_scale: float = Query(1.0, alias="precipScale", ge=0.5, le=2.0),
         wind_speed_scale: float = Query(1.0, alias="windSpeedScale", ge=0.5, le=2.0),
     ) -> FireLayersResponse:
-        prediction, geojson, layers = await run_in_threadpool(
-            service.find_layers,
-            fire_id,
-            year,
-            sample_index,
-            threshold,
-            model_input,
-            {
-                "viirs_m11": viirs_m11_scale,
-                "viirs_i2": viirs_i2_scale,
-                "ndvi": ndvi_scale,
-                "evi2": evi2_scale,
-                "precip": precip_scale,
-                "wind_speed": wind_speed_scale,
-            },
+        queue_wait_ms = await _acquire_inference_slot("/fires/{fire_id}/layers")
+        started = time.perf_counter()
+        try:
+            prediction, geojson, layers = await run_in_threadpool(
+                service.find_layers,
+                fire_id,
+                year,
+                sample_index,
+                threshold,
+                model_input,
+                {
+                    "viirs_m11": viirs_m11_scale,
+                    "viirs_i2": viirs_i2_scale,
+                    "ndvi": ndvi_scale,
+                    "evi2": evi2_scale,
+                    "precip": precip_scale,
+                    "wind_speed": wind_speed_scale,
+                },
+            )
+            return FireLayersResponse.from_prediction(prediction, geojson, layers)
+        finally:
+            _release_inference_slot(
+                route_name="/fires/{fire_id}/layers",
+                queue_wait_ms=queue_wait_ms,
+                started=started,
+            )
+
+    async def _acquire_inference_slot(route_name: str) -> float:
+        queue_wait_started = time.perf_counter()
+        try:
+            await asyncio.wait_for(
+                infer_semaphore.acquire(),
+                timeout=settings.infer_queue_timeout_seconds,
+            )
+        except asyncio.TimeoutError as exc:
+            service.record_rate_limited()
+            retry_after = max(1, math.ceil(settings.infer_queue_timeout_seconds))
+            logger.warning(
+                "rate_limited route=%s queue_timeout_s=%.3f",
+                route_name,
+                settings.infer_queue_timeout_seconds,
+            )
+            raise HTTPException(
+                status_code=429,
+                detail="Server busy, retry shortly.",
+                headers={"Retry-After": str(retry_after)},
+            ) from exc
+
+        queue_wait_ms = (time.perf_counter() - queue_wait_started) * 1000.0
+        service.mark_inference_started(queue_wait_ms)
+        return queue_wait_ms
+
+    def _release_inference_slot(
+        route_name: str,
+        queue_wait_ms: float,
+        started: float,
+    ) -> None:
+        infer_semaphore.release()
+        inference_duration_ms = (time.perf_counter() - started) * 1000.0
+        service.mark_inference_finished(inference_duration_ms)
+        logger.info(
+            "inference_completed route=%s queue_wait_ms=%.2f inference_duration_ms=%.2f",
+            route_name,
+            queue_wait_ms,
+            inference_duration_ms,
         )
-        return FireLayersResponse.from_prediction(prediction, geojson, layers)
 
     return app
 

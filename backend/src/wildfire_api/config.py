@@ -20,6 +20,10 @@ class Settings(BaseModel):
     default_year: int = Field(default=2021, ge=2018)
     n_leading_observations: int = Field(default=1, ge=1)
     probability_threshold: float = Field(default=0.9, ge=0.0, le=1.0)
+    infer_max_concurrency: int = Field(default=3, ge=1)
+    infer_queue_timeout_seconds: float = Field(default=0.35, ge=0.0)
+    cache_ttl_seconds: int = Field(default=600, ge=1)
+    cache_max_entries: int = Field(default=300, ge=1)
     flatten_temporal_dimension: bool = True
 
     class Config:
@@ -39,7 +43,6 @@ def _parse_years(raw: str | None) -> Tuple[int, int]:
 
 def _build_settings() -> Settings:
     backend_root = Path(__file__).resolve().parents[2]
-    project_root = backend_root.parent
 
     default_model = backend_root / "resources" / "model.ckpt"
     default_hdf5 = Path("/u50/capstone/cs4zp6g17/data/hdf5")
@@ -57,6 +60,12 @@ def _build_settings() -> Settings:
         default_year=int(os.getenv("WILDFIRE_DEFAULT_YEAR", 2021)),
         n_leading_observations=int(os.getenv("WILDFIRE_N_LEADS", 1)),
         probability_threshold=float(os.getenv("WILDFIRE_PROB_THRESHOLD", 0.9)),
+        infer_max_concurrency=int(os.getenv("WILDFIRE_INFER_MAX_CONCURRENCY", 3)),
+        infer_queue_timeout_seconds=float(
+            os.getenv("WILDFIRE_INFER_QUEUE_TIMEOUT_SECONDS", 0.35)
+        ),
+        cache_ttl_seconds=int(os.getenv("WILDFIRE_CACHE_TTL_SECONDS", 600)),
+        cache_max_entries=int(os.getenv("WILDFIRE_CACHE_MAX_ENTRIES", 300)),
         flatten_temporal_dimension=os.getenv("WILDFIRE_FLATTEN_TEMP", "true")
         .strip()
         .lower()

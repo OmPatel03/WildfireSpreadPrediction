@@ -36,6 +36,10 @@ Environment variables (optional overrides):
 | `WILDFIRE_N_LEADS` | `1` | Number of leading observations to feed into the model per prediction. |
 | `WILDFIRE_PROB_THRESHOLD` | `0.5` | Default probability cutoff when converting model logits to a binary mask. |
 | `WILDFIRE_DEVICE` | auto-detect | Set to `cpu`, `cuda`, etc. to pin inference to a specific device. |
+| `WILDFIRE_INFER_MAX_CONCURRENCY` | `3` | Maximum number of concurrent inference requests processed by the backend. |
+| `WILDFIRE_INFER_QUEUE_TIMEOUT_SECONDS` | `0.35` | Max queue wait before the backend rejects an inference request with `429`. |
+| `WILDFIRE_CACHE_TTL_SECONDS` | `600` | TTL for cached inference probability rasters (seconds). |
+| `WILDFIRE_CACHE_MAX_ENTRIES` | `300` | Maximum number of cached inference entries (LRU eviction). |
 
 ### REST endpoints
 
@@ -54,6 +58,7 @@ Environment variables (optional overrides):
   * Centroid coordinates from the HDF5 attributes (`lnglat`) so the client can place the feature on a basemap.
   * The predicted probability raster and binary mask for the requested sample window.
   * Basic summary stats (mean/max probabilities, positive pixel counts, etc.).
+  * Note: this endpoint and `/fires/{fire_id}/layers` may return `429 Too Many Requests` under high load.
 
 ### GraphQL endpoint
 
