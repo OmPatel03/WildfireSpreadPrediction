@@ -207,13 +207,13 @@ export const differenceCircleLayer = {
       14,
       7,
     ],
-    "circle-color": [
+      "circle-color": [
       "match",
       ["get", "outcome"],
       "true_positive",
       "#22c55e",
       "false_positive",
-      "#f97316",
+      "#8b5cf6",
       "false_negative",
       "#ef4444",
       "#94a3b8",

@@ -8,6 +8,27 @@ const LAYER_OPTIONS = [
   { key: "origin", label: "Origin" },
 ];
 
+const CONTROL_TOOLTIPS = {
+  year: "Choose which wildfire season to browse and analyze.",
+  catalogLimit: "Set how many incidents are loaded into the catalog for this year.",
+  gee: "Use Google Earth Engine imagery for the basemap.",
+  osm: "Use OpenStreetMap-based tiles for fast standard and terrain basemaps.",
+  basemap: "Pick the imagery style behind the wildfire layers for the current map provider.",
+  flatProjection: "Show the OSM 3D map in the standard flat mercator projection.",
+  globeProjection: "Wrap the OSM 3D map onto a globe projection.",
+  threshold: "Adjust the prediction cutoff used for the selected fire's spread layers.",
+};
+
+const LAYER_TOOLTIPS = {
+  overview: "Show catalog fire locations across the map.",
+  predictionHeatmap: "Show predicted spread intensity for the selected fire.",
+  predictionPolygons: "Show predicted spread polygons and 3D extrusions.",
+  groundTruthHeatmap: "Show observed fire spread for comparison.",
+  differenceHeatmap: "Highlight true positives, false positives, and false negatives.",
+  extent: "Outline the selected incident boundary.",
+  origin: "Mark the selected incident ignition point.",
+};
+
 export default function FilterBar({
   year,
   yearOptions,
@@ -21,6 +42,9 @@ export default function FilterBar({
   mapStyle,
   mapStyles,
   onMapStyleChange,
+  osmMapStyle,
+  osmMapStyles,
+  onOsmMapStyleChange,
   viewMode,
   osmProjection,
   onOsmProjectionChange,
@@ -28,9 +52,9 @@ export default function FilterBar({
   onToggleLayer,
 }) {
   const visibleMapStyles = mapProvider === "osm"
-    ? [{ value: "standard", label: "Standard" }]
+    ? osmMapStyles
     : mapStyles;
-  const visibleMapStyleValue = mapProvider === "osm" ? "standard" : mapStyle;
+  const visibleMapStyleValue = mapProvider === "osm" ? osmMapStyle : mapStyle;
   const showOsmProjectionControl = mapProvider === "osm" && viewMode === "3d";
 
   return (
@@ -52,47 +76,53 @@ export default function FilterBar({
         <div className={"top-bar-controls" + (showOsmProjectionControl ? " has-globe-control" : "")}>
           <div className="control-group compact">
             <label htmlFor="year-select">Year</label>
-            <select
-              id="year-select"
-              value={year}
-              onChange={(event) => onYearChange(Number(event.target.value))}
-            >
-              {yearOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+            <div className="control-input-anchor tooltip-anchor" data-tooltip={CONTROL_TOOLTIPS.year}>
+              <select
+                id="year-select"
+                value={year}
+                onChange={(event) => onYearChange(Number(event.target.value))}
+              >
+                {yearOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="control-group compact">
             <label htmlFor="catalog-limit">Catalog size</label>
-            <select
-              id="catalog-limit"
-              value={catalogLimit}
-              onChange={(event) => onCatalogLimitChange(Number(event.target.value))}
-            >
-              {[25, 50, 100, 200].map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+            <div className="control-input-anchor tooltip-anchor" data-tooltip={CONTROL_TOOLTIPS.catalogLimit}>
+              <select
+                id="catalog-limit"
+                value={catalogLimit}
+                onChange={(event) => onCatalogLimitChange(Number(event.target.value))}
+              >
+                {[25, 50, 100, 200].map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="control-group compact provider-group">
-            <label>Provider</label>
+            <label>Map Provider</label>
             <div className="segmented-control" role="group" aria-label="Map provider">
               <button
                 type="button"
-                className={mapProvider === "gee" ? "active" : ""}
+                className={"tooltip-anchor" + (mapProvider === "gee" ? " active" : "")}
+                data-tooltip={CONTROL_TOOLTIPS.gee}
                 onClick={() => onMapProviderChange("gee")}
               >
                 GEE
               </button>
               <button
                 type="button"
-                className={mapProvider === "osm" ? "active" : ""}
+                className={"tooltip-anchor" + (mapProvider === "osm" ? " active" : "")}
+                data-tooltip={CONTROL_TOOLTIPS.osm}
                 onClick={() => onMapProviderChange("osm")}
               >
                 OSM
@@ -102,18 +132,26 @@ export default function FilterBar({
 
           <div className="control-group compact">
             <label htmlFor="map-style">Basemap</label>
-            <select
-              id="map-style"
-              value={visibleMapStyleValue}
-              disabled={mapProvider === "osm"}
-              onChange={(event) => onMapStyleChange(event.target.value)}
-            >
-              {visibleMapStyles.map((style) => (
-                <option key={style.value} value={style.value}>
-                  {style.label}
-                </option>
-              ))}
-            </select>
+            <div className="control-input-anchor tooltip-anchor" data-tooltip={CONTROL_TOOLTIPS.basemap}>
+              <select
+                id="map-style"
+                value={visibleMapStyleValue}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  if (mapProvider === "osm") {
+                    onOsmMapStyleChange(nextValue);
+                  } else {
+                    onMapStyleChange(nextValue);
+                  }
+                }}
+              >
+                {visibleMapStyles.map((style) => (
+                  <option key={style.value} value={style.value}>
+                    {style.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {showOsmProjectionControl ? (
@@ -122,14 +160,16 @@ export default function FilterBar({
               <div className="segmented-control" role="group" aria-label="OSM 3D projection">
                 <button
                   type="button"
-                  className={osmProjection === "mercator" ? "active" : ""}
+                  className={"tooltip-anchor" + (osmProjection === "mercator" ? " active" : "")}
+                  data-tooltip={CONTROL_TOOLTIPS.flatProjection}
                   onClick={() => onOsmProjectionChange("mercator")}
                 >
                   Flat
                 </button>
                 <button
                   type="button"
-                  className={osmProjection === "globe" ? "active" : ""}
+                  className={"tooltip-anchor" + (osmProjection === "globe" ? " active" : "")}
+                  data-tooltip={CONTROL_TOOLTIPS.globeProjection}
                   onClick={() => onOsmProjectionChange("globe")}
                 >
                   Globe
@@ -142,15 +182,17 @@ export default function FilterBar({
             <label htmlFor="threshold-range">
               Threshold <span>{threshold.toFixed(2)}</span>
             </label>
-            <input
-              id="threshold-range"
-              type="range"
-              min={0.1}
-              max={0.95}
-              step={0.05}
-              value={threshold}
-              onChange={(event) => onThresholdChange(Number(event.target.value))}
-            />
+            <div className="control-input-anchor tooltip-anchor" data-tooltip={CONTROL_TOOLTIPS.threshold}>
+              <input
+                id="threshold-range"
+                type="range"
+                min={0.1}
+                max={0.95}
+                step={0.05}
+                value={threshold}
+                onChange={(event) => onThresholdChange(Number(event.target.value))}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -161,7 +203,11 @@ export default function FilterBar({
             const checked = Boolean(layerVisibility[layer.key]);
 
             return (
-              <label key={layer.key} className={"layer-chip" + (checked ? " is-active" : "")}>
+              <label
+                key={layer.key}
+                className={"layer-chip tooltip-anchor" + (checked ? " is-active" : "")}
+                data-tooltip={LAYER_TOOLTIPS[layer.key]}
+              >
                 <input
                   type="checkbox"
                   checked={checked}

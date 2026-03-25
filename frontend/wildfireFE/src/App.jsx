@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import "leaflet/dist/leaflet.css";
 import "./App.css";
 import FilterBar from "./components/FilterBar";
 import EnvironmentPanel from "./components/EnvironmentPanel";
@@ -23,7 +22,7 @@ const DEFAULT_CATALOG_LIMIT = 100;
 const PAGE_SIZE = 8;
 const THREE_D_BEARING = -20;
 const THREE_D_PITCH = 55;
-const DEFAULT_MAP_PROVIDER = "gee";
+const DEFAULT_MAP_PROVIDER = "osm";
 const DEFAULT_OSM_PROJECTION = "mercator";
 const INITIAL_VIEW = {
   longitude: -100,
@@ -35,6 +34,10 @@ const INITIAL_VIEW = {
 const MAP_STYLES = [
   { value: "satellite", label: "Satellite" },
   { value: "outdoors", label: "Outdoors" },
+  { value: "terrain", label: "Terrain" },
+];
+const OSM_MAP_STYLES = [
+  { value: "standard", label: "Standard" },
   { value: "terrain", label: "Terrain" },
 ];
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN ?? "";
@@ -177,13 +180,12 @@ export default function App() {
   const [incidentsView, setIncidentsView] = useState("catalog");
   const [mapProvider, setMapProvider] = useState(DEFAULT_MAP_PROVIDER);
   const [mapStyle, setMapStyle] = useState(MAP_STYLES[0].value);
+  const [osmMapStyle, setOsmMapStyle] = useState(OSM_MAP_STYLES[0].value);
   const [osmProjection, setOsmProjection] = useState(DEFAULT_OSM_PROJECTION);
   const [modelInputsOpen, setModelInputsOpen] = useState(false);
   const [environmentOpen, setEnvironmentOpen] = useState(false);
   const [collapsedPanels, setCollapsedPanels] = useState({
     incidents: false,
-    modelInputs: false,
-    environment: false,
   });
   const [environmentScales, setEnvironmentScales] = useState(DEFAULT_ENVIRONMENT_SCALES);
   const [layerVisibility, setLayerVisibility] = useState(
@@ -201,6 +203,7 @@ export default function App() {
   const [layersResponse, setLayersResponse] = useState(null);
   const [layersLoading, setLayersLoading] = useState(false);
   const [layersError, setLayersError] = useState(null);
+  const [selectedFireLoadingId, setSelectedFireLoadingId] = useState(null);
   const [overviewBasemap, setOverviewBasemap] = useState(null);
   const [overviewBasemapFailed, setOverviewBasemapFailed] = useState(false);
 
@@ -407,6 +410,7 @@ export default function App() {
       setTimeline(null);
       setSampleIndex(null);
       setTimelineError(null);
+      setSelectedFireLoadingId(null);
       return;
     }
 
@@ -461,6 +465,19 @@ export default function App() {
       controller.abort();
     };
   }, [selectedId, year]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setSelectedFireLoadingId(null);
+      return;
+    }
+
+    if (layersResponse || layersError || timelineError) {
+      setSelectedFireLoadingId((current) =>
+        current === selectedId ? null : current,
+      );
+    }
+  }, [layersError, layersResponse, selectedId, timelineError]);
 
   useEffect(() => {
     if (
@@ -536,29 +553,37 @@ export default function App() {
       110,
     );
     const bottomOverlayPadding = window.innerWidth <= 1100 ? 86 : 108;
-
-    if (!selectedFire) {
-      if (viewMode === "3d") {
-        map.resize?.();
-        map.easeTo?.({
-          center: [INITIAL_VIEW.longitude, INITIAL_VIEW.latitude],
-          zoom: INITIAL_VIEW.zoom,
+    const cameraOptions = viewMode === "3d"
+      ? {
           bearing: THREE_D_BEARING,
           pitch: THREE_D_PITCH,
-          duration: 900,
-        });
-      }
+        }
+      : {
+          bearing: 0,
+          pitch: 0,
+        };
+    const fitPadding = {
+      top: topPadding,
+      right: horizontalPadding,
+      bottom: bottomOverlayPadding,
+      left: horizontalPadding,
+    };
+
+    if (!selectedFire) {
+      map.resize?.();
+      map.easeTo?.({
+        center: [INITIAL_VIEW.longitude, INITIAL_VIEW.latitude],
+        zoom: INITIAL_VIEW.zoom,
+        duration: 900,
+        ...cameraOptions,
+      });
       return;
     }
 
     const bbox = selectedFire.bbox;
     const activeLayers = layersResponse?.layers ?? null;
 
-    if (viewMode === "2d") {
-      map.invalidateSize?.();
-    } else {
-      map.resize?.();
-    }
+    map.resize?.();
 
     const candidateFeatures = [
       ...(activeLayers?.predictionHeatmap?.features ?? []),
@@ -589,40 +614,18 @@ export default function App() {
         const latPad = Math.max((maxLat - minLat) * 0.35, 0.01);
         const lonPad = Math.max((maxLon - minLon) * 0.35, 0.01);
 
-        if (viewMode === "2d") {
-          map.fitBounds(
-            [
-              [minLat - latPad, minLon - lonPad],
-              [maxLat + latPad, maxLon + lonPad],
-            ],
-            {
-              paddingTopLeft: [horizontalPadding, topPadding],
-              paddingBottomRight: [horizontalPadding, bottomOverlayPadding],
-              maxZoom: 13,
-              animate: true,
-              duration: 1,
-            },
-          );
-        } else {
-          map.fitBounds(
-            [
-              [minLon - lonPad, minLat - latPad],
-              [maxLon + lonPad, maxLat + latPad],
-            ],
-            {
-              padding: {
-                top: topPadding,
-                right: horizontalPadding,
-                bottom: bottomOverlayPadding,
-                left: horizontalPadding,
-              },
-              maxZoom: 13,
-              duration: 1000,
-              bearing: THREE_D_BEARING,
-              pitch: THREE_D_PITCH,
-            },
-          );
-        }
+        map.fitBounds(
+          [
+            [minLon - lonPad, minLat - latPad],
+            [maxLon + lonPad, maxLat + latPad],
+          ],
+          {
+            padding: fitPadding,
+            maxZoom: 13,
+            duration: viewMode === "3d" ? 1000 : 850,
+            ...cameraOptions,
+          },
+        );
         return;
       }
     }
@@ -634,57 +637,27 @@ export default function App() {
       Number.isFinite(bbox.maxLon) &&
       Number.isFinite(bbox.maxLat)
     ) {
-      if (viewMode === "2d") {
-        map.fitBounds(
-          [
-            [bbox.minLat, bbox.minLon],
-            [bbox.maxLat, bbox.maxLon],
-          ],
-          {
-            paddingTopLeft: [horizontalPadding, topPadding],
-            paddingBottomRight: [horizontalPadding, bottomOverlayPadding],
-            maxZoom: 12.5,
-            animate: true,
-            duration: 1,
-          },
-        );
-      } else {
-        map.fitBounds(
-          [
-            [bbox.minLon, bbox.minLat],
-            [bbox.maxLon, bbox.maxLat],
-          ],
-          {
-            padding: {
-              top: topPadding,
-              right: horizontalPadding,
-              bottom: bottomOverlayPadding,
-              left: horizontalPadding,
-            },
-            maxZoom: 12.5,
-            duration: 1000,
-            bearing: THREE_D_BEARING,
-            pitch: THREE_D_PITCH,
-          },
-        );
-      }
+      map.fitBounds(
+        [
+          [bbox.minLon, bbox.minLat],
+          [bbox.maxLon, bbox.maxLat],
+        ],
+        {
+          padding: fitPadding,
+          maxZoom: 12.5,
+          duration: viewMode === "3d" ? 1000 : 850,
+          ...cameraOptions,
+        },
+      );
       return;
     }
 
-    if (viewMode === "2d") {
-      map.flyTo([selectedFire.latitude, selectedFire.longitude], 8.2, {
-        animate: true,
-        duration: 1,
-      });
-    } else {
-      map.flyTo({
-        center: [selectedFire.longitude, selectedFire.latitude],
-        zoom: 8.2,
-        bearing: THREE_D_BEARING,
-        pitch: THREE_D_PITCH,
-        duration: 1000,
-      });
-    }
+    map.flyTo({
+      center: [selectedFire.longitude, selectedFire.latitude],
+      zoom: 8.2,
+      duration: viewMode === "3d" ? 1000 : 850,
+      ...cameraOptions,
+    });
   }, [layersResponse, selectedFire, viewMode]);
 
   const currentFrame = useMemo(() => {
@@ -716,6 +689,7 @@ export default function App() {
   };
 
   const handleSelectFire = (fireId) => {
+    setSelectedFireLoadingId(fireId);
     setSelectedId(fireId);
     setIncidentsView("detail");
     setSampleIndex(null);
@@ -743,6 +717,14 @@ export default function App() {
     }));
   };
 
+  const handleOpenModelInputs = () => {
+    setModelInputsOpen((open) => !open);
+  };
+
+  const handleOpenEnvironment = () => {
+    setEnvironmentOpen((open) => !open);
+  };
+
   const handleTimelineStep = (step) => {
     const frames = timeline?.frames ?? [];
     if (!frames.length) return;
@@ -764,6 +746,8 @@ export default function App() {
 
   const fireLayers = layersResponse?.layers ?? null;
   const fireBasemap = layersResponse?.basemap ?? null;
+  const selectedFireLoading =
+    Boolean(selectedId) && selectedFireLoadingId === selectedId;
   const activeBasemap = mapProvider === "gee" ? (fireBasemap ?? overviewBasemap ?? null) : null;
   const hasActiveBasemapStyle =
     mapProvider === "gee" &&
@@ -789,6 +773,7 @@ export default function App() {
         viewMode={viewMode}
         mapProvider={mapProvider}
         mapStyle={mapStyle}
+        osmMapStyle={osmMapStyle}
         osmProjection={osmProjection}
         onOverviewSelect={handleSelectFire}
         overviewData={overviewData}
@@ -797,6 +782,7 @@ export default function App() {
         basemap={activeBasemap}
         allowFallbackBasemap={allowFallbackBasemap}
         fireLayers={fireLayers}
+        selectedFireLoading={selectedFireLoading}
         layerVisibility={layerVisibility}
       />
       <div className="map-atmosphere" aria-hidden="true">
@@ -828,6 +814,9 @@ export default function App() {
           mapStyle={mapStyle}
           mapStyles={MAP_STYLES}
           onMapStyleChange={setMapStyle}
+          osmMapStyle={osmMapStyle}
+          osmMapStyles={OSM_MAP_STYLES}
+          onOsmMapStyleChange={setOsmMapStyle}
           viewMode={viewMode}
           osmProjection={osmProjection}
           onOsmProjectionChange={setOsmProjection}
@@ -839,16 +828,18 @@ export default function App() {
           <div className="toolbar-actions">
             <button
               type="button"
-              className={modelInputsOpen ? "control-button active" : "control-button"}
-              onClick={() => setModelInputsOpen((open) => !open)}
+              className={(modelInputsOpen ? "control-button active" : "control-button") + " tooltip-anchor"}
+              data-tooltip="Open the panel with the model features for the selected frame."
+              onClick={handleOpenModelInputs}
             >
               Model inputs
             </button>
 
             <button
               type="button"
-              className={environmentOpen ? "control-button active" : "control-button"}
-              onClick={() => setEnvironmentOpen((open) => !open)}
+              className={(environmentOpen ? "control-button active" : "control-button") + " tooltip-anchor"}
+              data-tooltip="Open controls for adjusting environmental factors."
+              onClick={handleOpenEnvironment}
             >
               Environment
             </button>
@@ -856,14 +847,16 @@ export default function App() {
             <div className="segmented-control">
               <button
                 type="button"
-                className={viewMode === "2d" ? "active" : ""}
+                className={"tooltip-anchor" + (viewMode === "2d" ? " active" : "")}
+                data-tooltip="Use the standard top-down map."
                 onClick={() => setViewMode("2d")}
               >
                 2D
               </button>
               <button
                 type="button"
-                className={viewMode === "3d" ? "active" : ""}
+                className={"tooltip-anchor" + (viewMode === "3d" ? " active" : "")}
+                data-tooltip="Use the pitched 3D map with extruded prediction masks."
                 onClick={() => setViewMode("3d")}
               >
                 3D
@@ -875,8 +868,7 @@ export default function App() {
 
       <ModelInputsPanel
         isOpen={modelInputsOpen}
-        collapsed={collapsedPanels.modelInputs}
-        onToggleCollapse={() => handleTogglePanelCollapse("modelInputs")}
+        onClose={() => setModelInputsOpen(false)}
         selectedFire={selectedFire}
         currentFrame={currentFrame}
         loading={layersLoading}
@@ -886,8 +878,7 @@ export default function App() {
 
       <EnvironmentPanel
         isOpen={environmentOpen}
-        collapsed={collapsedPanels.environment}
-        onToggleCollapse={() => handleTogglePanelCollapse("environment")}
+        onClose={() => setEnvironmentOpen(false)}
         selectedFire={selectedFire}
         currentFrame={currentFrame}
         scales={environmentScales}

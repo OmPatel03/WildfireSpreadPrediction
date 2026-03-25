@@ -66,6 +66,7 @@ class WildfireModel:
 
     def _load_model_from_checkpoint(self, checkpoint_path: str) -> SMPModel:
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        print(f"Loading model from checkpoint: {checkpoint_path}")
         hyper_params = checkpoint.get("hyper_parameters", {})
         model_class = self._resolve_model_class(hyper_params)
         init_args: Dict[str, Any] = {}
@@ -85,6 +86,7 @@ class WildfireModel:
         model = model_class(**init_args)
         state_dict = checkpoint["state_dict"]
         model.load_state_dict(state_dict, strict=True)
+        print("Model loaded successfully.")
         return model
 
 

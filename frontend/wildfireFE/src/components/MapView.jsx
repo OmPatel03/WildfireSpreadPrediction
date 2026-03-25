@@ -1,25 +1,45 @@
-import L from "leaflet";
 import "maplibre-gl/dist/maplibre-gl.css";
 import maplibregl from "maplibre-gl";
-import { useMemo, useRef } from "react";
-import { GeoJSON, MapContainer, TileLayer } from "react-leaflet";
+import { useEffect, useMemo, useState } from "react";
 import Map, { Layer, Source } from "react-map-gl/maplibre";
-import HeatmapLayer from "./HeatmapLayer";
 
-const FALLBACK_BASEMAP_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
-const FALLBACK_BASEMAP_ATTRIBUTION =
+const OSM_STANDARD_BASEMAP_TILES = [
+  "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+  "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+  "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
+];
+const OSM_STANDARD_BASEMAP_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+const OSM_STANDARD_BASEMAP_MAX_ZOOM = 19;
+const OSM_TERRAIN_BASEMAP_TILES = [
+  "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+  "https://b.tile.opentopomap.org/{z}/{x}/{y}.png",
+  "https://c.tile.opentopomap.org/{z}/{x}/{y}.png",
+];
+const OSM_TERRAIN_BASEMAP_ATTRIBUTION =
+  'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, ' +
+  '<a href="https://viewfinderpanoramas.org">SRTM</a> | ' +
+  'Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> ' +
+  '(<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)';
+const OSM_TERRAIN_BASEMAP_MAX_ZOOM = 17;
+
 const EMPTY_FEATURE_COLLECTION = {
   type: "FeatureCollection",
   features: [],
 };
+
 const OVERVIEW_LAYER_ID = "overview-circles";
-const PREDICTION_POLYGON_LAYER_ID = "prediction-polygons-3d";
-const PREDICTION_HEAT_LAYER_ID = "prediction-heat-3d";
-const GROUND_TRUTH_LAYER_ID = "ground-truth-3d";
-const DIFFERENCE_LAYER_ID = "difference-3d";
-const EXTENT_LAYER_ID = "extent-3d";
-const ORIGIN_LAYER_ID = "origin-3d";
+const PREDICTION_POINT_LAYER_ID = "prediction-points-3d";
+const PREDICTION_HEAT_LAYER_ID = "prediction-heat-2d";
+const GROUND_TRUTH_POINT_LAYER_ID = "ground-truth-points-3d";
+const GROUND_TRUTH_HEAT_LAYER_ID = "ground-truth-heat-2d";
+const DIFFERENCE_POINT_LAYER_ID = "difference-points-3d";
+const PREDICTION_POLYGON_EXTRUSION_LAYER_ID = "prediction-polygons-3d";
+const PREDICTION_POLYGON_FILL_LAYER_ID = "prediction-polygons-fill-2d";
+const PREDICTION_POLYGON_OUTLINE_LAYER_ID = "prediction-polygons-outline-2d";
+const EXTENT_LAYER_ID = "extent";
+const ORIGIN_LAYER_ID = "origin";
+
 const PREDICTION_HEAT_GRADIENT = {
   0.2: "#f59e0b",
   0.45: "#f97316",
@@ -32,6 +52,7 @@ const GROUND_TRUTH_HEAT_GRADIENT = {
   0.7: "#0ea5e9",
   1.0: "#075985",
 };
+const FALSE_POSITIVE_COLOR = "#8b5cf6";
 const TRUE_POSITIVE_HEAT_GRADIENT = {
   0.2: "#86efac",
   0.45: "#4ade80",
@@ -39,10 +60,10 @@ const TRUE_POSITIVE_HEAT_GRADIENT = {
   1.0: "#166534",
 };
 const FALSE_POSITIVE_HEAT_GRADIENT = {
-  0.2: "#fdba74",
-  0.45: "#fb923c",
-  0.7: "#f97316",
-  1.0: "#9a3412",
+  0.2: "#ddd6fe",
+  0.45: "#c4b5fd",
+  0.7: FALSE_POSITIVE_COLOR,
+  1.0: "#5b21b6",
 };
 const FALSE_NEGATIVE_HEAT_GRADIENT = {
   0.2: "#fca5a5",
@@ -50,7 +71,6 @@ const FALSE_NEGATIVE_HEAT_GRADIENT = {
   0.7: "#ef4444",
   1.0: "#991b1b",
 };
-
 function buildSelectedExtentGeojson(selectedFire) {
   const bbox = selectedFire?.bbox;
   if (!bbox) return null;
@@ -106,79 +126,40 @@ function buildSelectedOriginGeojson(selectedFire) {
   };
 }
 
-function getOverviewLayerOptions(selectedId, onOverviewSelect) {
-  const hasSelection = Boolean(selectedId);
+function buildLoadingExtentPolygon(map, bbox) {
+  if (
+    !map ||
+    !bbox ||
+    !Number.isFinite(bbox.minLon) ||
+    !Number.isFinite(bbox.minLat) ||
+    !Number.isFinite(bbox.maxLon) ||
+    !Number.isFinite(bbox.maxLat)
+  ) {
+    return null;
+  }
 
-  return {
-    pointToLayer: (feature, latlng) => {
-      const isSelected = feature?.properties?.fireId === selectedId;
-      const samples = Number(feature?.properties?.samples ?? 0);
-      const color = samples >= 8 ? "#ef4444" : samples >= 3 ? "#f59e0b" : "#3b82f6";
-      return L.circleMarker(latlng, {
-        radius: isSelected ? 7.5 : hasSelection ? 4.5 : 6,
-        fillColor: isSelected ? "#fff7ed" : color,
-        color: isSelected
-          ? "#fb923c"
-          : hasSelection
-            ? "rgba(148, 163, 184, 0.28)"
-            : "rgba(255,255,255,0.7)",
-        weight: isSelected ? 2.2 : 1.2,
-        opacity: isSelected ? 1 : hasSelection ? 0.42 : 1,
-        fillOpacity: isSelected ? 1 : hasSelection ? 0.38 : 0.92,
-      });
-    },
-    onEachFeature: (feature, layer) => {
-      if (feature?.properties?.fireId === selectedId) {
-        layer.bringToFront?.();
-      }
-      layer.on("click", () => {
-        const fireId = feature?.properties?.fireId;
-        if (fireId) onOverviewSelect(fireId);
-      });
-    },
-  };
+  const corners = [
+    [bbox.minLon, bbox.maxLat],
+    [bbox.maxLon, bbox.maxLat],
+    [bbox.maxLon, bbox.minLat],
+    [bbox.minLon, bbox.minLat],
+  ];
+
+  const projected = corners
+    .map((corner) => map.project(corner))
+    .filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y));
+
+  if (projected.length !== 4) {
+    return null;
+  }
+
+  return projected
+    .map((point) => `${point.x}px ${point.y}px`)
+    .join(", ");
 }
 
-function getPredictionPolygonOptions() {
-  return {
-    style: (feature) => ({
-      color: "#f97316",
-      weight: 1,
-      opacity: 0.8,
-      fillColor: "#ef4444",
-      fillOpacity: Math.max(0.15, Math.min(0.7, Number(feature?.properties?.probability ?? 0))),
-    }),
-  };
-}
-
-function getSelectedExtentOptions() {
-  return {
-    style: {
-      color: "#fb923c",
-      weight: 3,
-      opacity: 0.95,
-      fillOpacity: 0.04,
-      dashArray: "7 5",
-    },
-  };
-}
-
-function getSelectedOriginOptions() {
-  return {
-    pointToLayer: (_feature, latlng) =>
-      L.circleMarker(latlng, {
-        radius: 9,
-        fillColor: "#fff7ed",
-        color: "#fb923c",
-        weight: 3.2,
-        opacity: 1,
-        fillOpacity: 1,
-      }),
-  };
-}
-
-function buildMapLibreStyle(tileUrl, tileAttribution) {
-  if (!tileUrl) {
+function buildMapLibreStyle(tileUrls, tileAttribution, tileMaxZoom) {
+  if (!tileUrls?.length) {
     return {
       version: 8,
       sources: {},
@@ -199,8 +180,9 @@ function buildMapLibreStyle(tileUrl, tileAttribution) {
     sources: {
       basemap: {
         type: "raster",
-        tiles: [tileUrl],
+        tiles: tileUrls,
         tileSize: 256,
+        maxzoom: tileMaxZoom,
         attribution: tileAttribution,
       },
     },
@@ -211,6 +193,59 @@ function buildMapLibreStyle(tileUrl, tileAttribution) {
         source: "basemap",
       },
     ],
+  };
+}
+
+function buildProbabilityColorExpression() {
+  return [
+    "interpolate",
+    ["linear"],
+    ["coalesce", ["to-number", ["get", "probability"]], 0],
+    0,
+    "#f59e0b",
+    0.45,
+    "#f97316",
+    0.7,
+    "#ef4444",
+    1,
+    "#991b1b",
+  ];
+}
+
+function buildProbabilityOpacityExpression(minOpacity, maxOpacity) {
+  return [
+    "interpolate",
+    ["linear"],
+    ["coalesce", ["to-number", ["get", "probability"]], 0],
+    0,
+    minOpacity,
+    1,
+    maxOpacity,
+  ];
+}
+
+function buildHeatmapColorExpression(gradient) {
+  const expression = ["interpolate", ["linear"], ["heatmap-density"], 0, "rgba(2, 6, 23, 0)"];
+  const stops = Object.entries(gradient)
+    .map(([stop, color]) => [Number(stop), color])
+    .filter(([stop]) => Number.isFinite(stop))
+    .sort((a, b) => a[0] - b[0]);
+
+  stops.forEach(([stop, color]) => {
+    expression.push(stop, color);
+  });
+
+  return expression;
+}
+
+function filterFeatureCollectionByOutcome(collection, outcome) {
+  const features = (collection?.features ?? []).filter(
+    (feature) => feature?.properties?.outcome === outcome,
+  );
+
+  return {
+    type: "FeatureCollection",
+    features,
   };
 }
 
@@ -279,103 +314,69 @@ function createOverviewCircleLayer(selectedId) {
   };
 }
 
-function createPredictionHeatLayer() {
-  return {
-    id: PREDICTION_HEAT_LAYER_ID,
-    type: "circle",
+function createHeatmapLayer({ id, gradient, filter, weightExpression = 1, mode = "2d" }) {
+  const is3d = mode === "3d";
+  const layer = {
+    id,
+    type: "heatmap",
     paint: {
-      "circle-radius": [
-        "interpolate",
-        ["linear"],
-        ["coalesce", ["to-number", ["get", "probability"]], 0],
-        0,
-        4,
-        0.4,
-        7,
-        0.75,
-        10,
-        1,
-        12,
-      ],
-      "circle-color": [
-        "interpolate",
-        ["linear"],
-        ["coalesce", ["to-number", ["get", "probability"]], 0],
-        0,
-        "#f59e0b",
-        0.45,
-        "#f97316",
-        0.7,
-        "#ef4444",
-        1,
-        "#991b1b",
-      ],
-      "circle-opacity": 0.78,
-      "circle-stroke-width": 0.6,
-      "circle-stroke-color": "rgba(255,255,255,0.18)",
+      "heatmap-weight": weightExpression,
+      "heatmap-intensity": is3d
+        ? ["interpolate", ["linear"], ["zoom"], 0, 0.85, 4, 1.05, 8, 1.25, 12, 1.4]
+        : ["interpolate", ["linear"], ["zoom"], 0, 0.75, 4, 0.95, 8, 1.15, 12, 1.3],
+      "heatmap-radius": is3d
+        ? ["interpolate", ["linear"], ["zoom"], 0, 10, 4, 16, 8, 24, 12, 36]
+        : ["interpolate", ["linear"], ["zoom"], 0, 8, 4, 14, 8, 22, 12, 34],
+      "heatmap-opacity": is3d
+        ? ["interpolate", ["linear"], ["zoom"], 0, 0.78, 8, 0.88, 12, 0.78, 16, 0.58]
+        : ["interpolate", ["linear"], ["zoom"], 0, 0.72, 8, 0.84, 12, 0.72, 16, 0.5],
+      "heatmap-color": buildHeatmapColorExpression(gradient),
     },
   };
-}
 
-function createGroundTruthLayer() {
-  return {
-    id: GROUND_TRUTH_LAYER_ID,
-    type: "circle",
-    paint: {
-      "circle-radius": 5,
-      "circle-color": "#38bdf8",
-      "circle-opacity": 0.82,
-      "circle-stroke-width": 0.8,
-      "circle-stroke-color": "#e0f2fe",
-    },
-  };
-}
+  if (filter) {
+    layer.filter = filter;
+  }
 
-function createDifferenceLayer() {
-  return {
-    id: DIFFERENCE_LAYER_ID,
-    type: "circle",
-    paint: {
-      "circle-radius": 5.5,
-      "circle-color": [
-        "match",
-        ["get", "outcome"],
-        "true_positive",
-        "#22c55e",
-        "false_positive",
-        "#f97316",
-        "false_negative",
-        "#ef4444",
-        "#94a3b8",
-      ],
-      "circle-opacity": 0.84,
-      "circle-stroke-width": 0.8,
-      "circle-stroke-color": "rgba(255,255,255,0.16)",
-    },
-  };
+  return layer;
 }
 
 function createPredictionExtrusionLayer() {
   return {
-    id: PREDICTION_POLYGON_LAYER_ID,
+    id: PREDICTION_POLYGON_EXTRUSION_LAYER_ID,
     type: "fill-extrusion",
     paint: {
-      "fill-extrusion-color": [
-        "interpolate",
-        ["linear"],
-        ["coalesce", ["to-number", ["get", "probability"]], 0],
-        0,
-        "#f59e0b",
-        0.45,
-        "#f97316",
-        0.7,
-        "#ef4444",
-        1,
-        "#991b1b",
-      ],
+      "fill-extrusion-color": buildProbabilityColorExpression(),
       "fill-extrusion-height": ["coalesce", ["to-number", ["get", "height"]], 0],
       "fill-extrusion-base": 0,
       "fill-extrusion-opacity": 0.78,
+    },
+  };
+}
+
+function createPredictionPolygonFillLayer() {
+  return {
+    id: PREDICTION_POLYGON_FILL_LAYER_ID,
+    type: "fill",
+    paint: {
+      "fill-color": buildProbabilityColorExpression(),
+      "fill-opacity": buildProbabilityOpacityExpression(0.15, 0.7),
+    },
+  };
+}
+
+function createPredictionPolygonOutlineLayer() {
+  return {
+    id: PREDICTION_POLYGON_OUTLINE_LAYER_ID,
+    type: "line",
+    paint: {
+      "line-color": "#f97316",
+      "line-width": 1,
+      "line-opacity": 0.82,
+    },
+    layout: {
+      "line-join": "round",
+      "line-cap": "round",
     },
   };
 }
@@ -410,15 +411,59 @@ function createOriginLayer() {
   };
 }
 
-function ThreeDMapView({
+function LoadingExtentOverlay({ map, bbox, active }) {
+  const [clipPathPolygon, setClipPathPolygon] = useState(null);
+
+  useEffect(() => {
+    if (!active || !map || !bbox) {
+      setClipPathPolygon(null);
+      return undefined;
+    }
+
+    const updatePolygon = () => {
+      const polygon = buildLoadingExtentPolygon(map, bbox);
+      setClipPathPolygon(polygon ? `polygon(${polygon})` : null);
+    };
+
+    updatePolygon();
+    map.on("move", updatePolygon);
+    map.on("resize", updatePolygon);
+    window.addEventListener("resize", updatePolygon);
+
+    return () => {
+      map.off("move", updatePolygon);
+      map.off("resize", updatePolygon);
+      window.removeEventListener("resize", updatePolygon);
+    };
+  }, [active, bbox, map]);
+
+  if (!active || !clipPathPolygon) {
+    return null;
+  }
+
+  return (
+    <div className="loading-extent-overlay" aria-hidden="true">
+      <div
+        className="loading-extent-region"
+        style={{ clipPath: clipPathPolygon }}
+      />
+    </div>
+  );
+}
+
+function MapLibreView({
   mapRef,
   initialViewState,
+  viewMode,
   mapProjection,
-  tileUrl,
+  tileUrls,
   tileAttribution,
+  tileMaxZoom,
   overviewData,
   onOverviewSelect,
   selectedId,
+  loadingExtentBbox,
+  selectedFireLoading,
   predictionHeatmapData,
   groundTruthData,
   differenceData,
@@ -427,274 +472,198 @@ function ThreeDMapView({
   originData,
   layerVisibility,
 }) {
-  const mapInstanceRef = useRef(null);
+  const is3d = viewMode === "3d";
+  const [mapInstance, setMapInstance] = useState(null);
   const mapStyle = useMemo(
-    () => buildMapLibreStyle(tileUrl, tileAttribution),
-    [tileAttribution, tileUrl],
+    () => buildMapLibreStyle(tileUrls, tileAttribution, tileMaxZoom),
+    [tileAttribution, tileMaxZoom, tileUrls],
   );
   const overviewLayer = useMemo(
     () => createOverviewCircleLayer(selectedId),
     [selectedId],
   );
+  const truePositiveDifferenceData = useMemo(
+    () => filterFeatureCollectionByOutcome(differenceData, "true_positive"),
+    [differenceData],
+  );
+  const falsePositiveDifferenceData = useMemo(
+    () => filterFeatureCollectionByOutcome(differenceData, "false_positive"),
+    [differenceData],
+  );
+  const falseNegativeDifferenceData = useMemo(
+    () => filterFeatureCollectionByOutcome(differenceData, "false_negative"),
+    [differenceData],
+  );
   const interactiveLayerIds = layerVisibility.overview ? [OVERVIEW_LAYER_ID] : [];
+  const activeProjection = is3d ? mapProjection : "mercator";
+  const showExtentLayer = layerVisibility.extent || selectedFireLoading;
 
   return (
-    <Map
-      ref={(instance) => {
-        mapInstanceRef.current = instance;
-        mapRef.current = instance?.getMap?.() ?? null;
-      }}
-      mapLib={maplibregl}
-      initialViewState={initialViewState}
-      mapStyle={mapStyle}
-      projection={mapProjection}
-      attributionControl
-      interactiveLayerIds={interactiveLayerIds}
-      maxPitch={75}
-      dragRotate
-      touchPitch
-      style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh" }}
-      className="map-container"
-      onClick={(event) => {
-        const selectedFeature = event.features?.find(
-          (feature) => feature?.layer?.id === OVERVIEW_LAYER_ID,
-        );
-        const fireId = selectedFeature?.properties?.fireId;
-        if (fireId) {
-          onOverviewSelect(fireId);
-        }
-      }}
-      onLoad={() => {
-        mapRef.current = mapInstanceRef.current?.getMap?.() ?? null;
-      }}
-      onRemove={() => {
-        mapRef.current = null;
-      }}
-    >
-      {layerVisibility.overview && overviewData ? (
-        <Source id="overview-source" type="geojson" data={overviewData}>
-          <Layer {...overviewLayer} />
-        </Source>
-      ) : null}
-
-      {layerVisibility.predictionHeatmap ? (
-        <Source
-          id="prediction-heat-source"
-          type="geojson"
-          data={predictionHeatmapData ?? EMPTY_FEATURE_COLLECTION}
-        >
-          <Layer {...createPredictionHeatLayer()} />
-        </Source>
-      ) : null}
-
-      {layerVisibility.groundTruthHeatmap ? (
-        <Source
-          id="ground-truth-source"
-          type="geojson"
-          data={groundTruthData ?? EMPTY_FEATURE_COLLECTION}
-        >
-          <Layer {...createGroundTruthLayer()} />
-        </Source>
-      ) : null}
-
-      {layerVisibility.differenceHeatmap ? (
-        <Source
-          id="difference-source"
-          type="geojson"
-          data={differenceData ?? EMPTY_FEATURE_COLLECTION}
-        >
-          <Layer {...createDifferenceLayer()} />
-        </Source>
-      ) : null}
-
-      {layerVisibility.predictionPolygons ? (
-        <Source
-          id="prediction-polygon-source"
-          type="geojson"
-          data={predictionPolygonData ?? EMPTY_FEATURE_COLLECTION}
-        >
-          <Layer {...createPredictionExtrusionLayer()} />
-        </Source>
-      ) : null}
-
-      {layerVisibility.extent ? (
-        <Source id="extent-source" type="geojson" data={extentData ?? EMPTY_FEATURE_COLLECTION}>
-          <Layer {...createExtentLayer()} />
-        </Source>
-      ) : null}
-
-      {layerVisibility.origin ? (
-        <Source id="origin-source" type="geojson" data={originData ?? EMPTY_FEATURE_COLLECTION}>
-          <Layer {...createOriginLayer()} />
-        </Source>
-      ) : null}
-    </Map>
-  );
-}
-
-function LeafletMapView({
-  mapRef,
-  initialViewState,
-  tileUrl,
-  tileAttribution,
-  overviewData,
-  onOverviewSelect,
-  selectedId,
-  fireLayers,
-  layerVisibility,
-  selectedExtentData,
-  selectedOriginData,
-}) {
-  const predictionHeatPoints = useMemo(
-    () =>
-      (fireLayers?.predictionHeatmap?.features ?? [])
-        .map((feature) => {
-          const [lon, lat] = feature?.geometry?.coordinates ?? [];
-          const probability = Number(feature?.properties?.probability ?? 0);
-          if (!Number.isFinite(lat) || !Number.isFinite(lon) || probability <= 0) {
-            return null;
+    <>
+      <Map
+        ref={(instance) => {
+          const nextMap = instance?.getMap?.() ?? null;
+          mapRef.current = nextMap;
+        }}
+        mapLib={maplibregl}
+        initialViewState={initialViewState}
+        mapStyle={mapStyle}
+        projection={activeProjection}
+        attributionControl
+        interactiveLayerIds={interactiveLayerIds}
+        maxPitch={is3d ? 75 : 0}
+        dragRotate={is3d}
+        touchPitch={is3d}
+        style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh" }}
+        className="map-container"
+        onClick={(event) => {
+          const selectedFeature = event.features?.find(
+            (feature) => feature?.layer?.id === OVERVIEW_LAYER_ID,
+          );
+          const fireId = selectedFeature?.properties?.fireId;
+          if (fireId) {
+            onOverviewSelect(fireId);
           }
-          return [lat, lon, Math.min(1, Math.max(probability, 0.35))];
-        })
-        .filter(Boolean),
-    [fireLayers],
-  );
-  const groundTruthHeatPoints = useMemo(
-    () =>
-      (fireLayers?.groundTruthHeatmap?.features ?? [])
-        .map((feature) => {
-          const [lon, lat] = feature?.geometry?.coordinates ?? [];
-          if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-            return null;
-          }
-          return [lat, lon, 1.0];
-        })
-        .filter(Boolean),
-    [fireLayers],
-  );
-  const differenceHeatGroups = useMemo(() => {
-    const groups = {
-      true_positive: [],
-      false_positive: [],
-      false_negative: [],
-    };
+        }}
+        onLoad={(event) => {
+          const nextMap = event.target ?? null;
+          mapRef.current = nextMap;
+          setMapInstance(nextMap);
+        }}
+        onRemove={() => {
+          mapRef.current = null;
+          setMapInstance(null);
+        }}
+      >
+        {layerVisibility.predictionHeatmap ? (
+          <Source
+            id="prediction-source"
+            type="geojson"
+            data={predictionHeatmapData ?? EMPTY_FEATURE_COLLECTION}
+          >
+            <Layer
+              {...createHeatmapLayer({
+                id: PREDICTION_HEAT_LAYER_ID,
+                gradient: PREDICTION_HEAT_GRADIENT,
+                weightExpression: [
+                  "interpolate",
+                  ["linear"],
+                  ["coalesce", ["to-number", ["get", "probability"]], 0],
+                  0,
+                  0,
+                  0.35,
+                  0.55,
+                  1,
+                  1,
+                ],
+                mode: is3d ? "3d" : "2d",
+              })}
+            />
+          </Source>
+        ) : null}
 
-    (fireLayers?.differenceHeatmap?.features ?? []).forEach((feature) => {
-      const [lon, lat] = feature?.geometry?.coordinates ?? [];
-      const outcome = feature?.properties?.outcome;
-      if (!Number.isFinite(lat) || !Number.isFinite(lon) || !groups[outcome]) {
-        return;
-      }
-      groups[outcome].push([lat, lon, 1]);
-    });
+        {layerVisibility.groundTruthHeatmap ? (
+          <Source
+            id="ground-truth-source"
+            type="geojson"
+            data={groundTruthData ?? EMPTY_FEATURE_COLLECTION}
+          >
+            <Layer
+              {...createHeatmapLayer({
+                id: GROUND_TRUTH_HEAT_LAYER_ID,
+                gradient: GROUND_TRUTH_HEAT_GRADIENT,
+                mode: is3d ? "3d" : "2d",
+              })}
+            />
+          </Source>
+        ) : null}
 
-    return groups;
-  }, [fireLayers]);
-  const overviewOptions = useMemo(
-    () => getOverviewLayerOptions(selectedId, onOverviewSelect),
-    [onOverviewSelect, selectedId],
-  );
+        {layerVisibility.differenceHeatmap ? (
+          <>
+            <Source
+              id="difference-true-positive-source"
+              type="geojson"
+              data={truePositiveDifferenceData}
+            >
+              <Layer
+                {...createHeatmapLayer({
+                  id: `${DIFFERENCE_POINT_LAYER_ID}-true-positive`,
+                  gradient: TRUE_POSITIVE_HEAT_GRADIENT,
+                  mode: is3d ? "3d" : "2d",
+                })}
+              />
+            </Source>
+            <Source
+              id="difference-false-positive-source"
+              type="geojson"
+              data={falsePositiveDifferenceData}
+            >
+              <Layer
+                {...createHeatmapLayer({
+                  id: `${DIFFERENCE_POINT_LAYER_ID}-false-positive`,
+                  gradient: FALSE_POSITIVE_HEAT_GRADIENT,
+                  mode: is3d ? "3d" : "2d",
+                })}
+              />
+            </Source>
+            <Source
+              id="difference-false-negative-source"
+              type="geojson"
+              data={falseNegativeDifferenceData}
+            >
+              <Layer
+                {...createHeatmapLayer({
+                  id: `${DIFFERENCE_POINT_LAYER_ID}-false-negative`,
+                  gradient: FALSE_NEGATIVE_HEAT_GRADIENT,
+                  mode: is3d ? "3d" : "2d",
+                })}
+              />
+            </Source>
+          </>
+        ) : null}
 
-  return (
-    <MapContainer
-      ref={mapRef}
-      center={[initialViewState.latitude, initialViewState.longitude]}
-      zoom={initialViewState.zoom}
-      zoomControl={false}
-      preferCanvas
-      zoomSnap={0.25}
-      zoomDelta={0.5}
-      className="map-container"
-      style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh" }}
-    >
-      {tileUrl ? (
-        <TileLayer
-          key={tileUrl}
-          url={tileUrl}
-          attribution={tileAttribution}
-          maxZoom={18}
-        />
-      ) : null}
+        {layerVisibility.predictionPolygons ? (
+          <Source
+            id="prediction-polygon-source"
+            type="geojson"
+            data={predictionPolygonData ?? EMPTY_FEATURE_COLLECTION}
+          >
+            {is3d ? (
+              <Layer {...createPredictionExtrusionLayer()} />
+            ) : (
+              <>
+                <Layer {...createPredictionPolygonFillLayer()} />
+                <Layer {...createPredictionPolygonOutlineLayer()} />
+              </>
+            )}
+          </Source>
+        ) : null}
 
-      {layerVisibility.overview && overviewData ? (
-        <GeoJSON data={overviewData} {...overviewOptions} />
-      ) : null}
+        {showExtentLayer ? (
+          <Source id="extent-source" type="geojson" data={extentData ?? EMPTY_FEATURE_COLLECTION}>
+            <Layer {...createExtentLayer()} />
+          </Source>
+        ) : null}
 
-      {predictionHeatPoints.length > 0 && layerVisibility.predictionHeatmap ? (
-        <HeatmapLayer
-          points={predictionHeatPoints}
-          radius={24}
-          blur={34}
-          maxZoom={18}
-          minOpacity={0.95}
-          gradient={PREDICTION_HEAT_GRADIENT}
-        />
-      ) : null}
+        {layerVisibility.origin ? (
+          <Source id="origin-source" type="geojson" data={originData ?? EMPTY_FEATURE_COLLECTION}>
+            <Layer {...createOriginLayer()} />
+          </Source>
+        ) : null}
 
-      {groundTruthHeatPoints.length > 0 && layerVisibility.groundTruthHeatmap ? (
-        <HeatmapLayer
-          points={groundTruthHeatPoints}
-          radius={22}
-          blur={30}
-          maxZoom={18}
-          minOpacity={0.95}
-          gradient={GROUND_TRUTH_HEAT_GRADIENT}
-        />
-      ) : null}
+        {layerVisibility.overview ? (
+          <Source id="overview-source" type="geojson" data={overviewData ?? EMPTY_FEATURE_COLLECTION}>
+            <Layer {...overviewLayer} />
+          </Source>
+        ) : null}
+      </Map>
 
-      {fireLayers?.predictionPolygons && layerVisibility.predictionPolygons ? (
-        <GeoJSON data={fireLayers.predictionPolygons} {...getPredictionPolygonOptions()} />
-      ) : null}
-
-      {layerVisibility.differenceHeatmap && differenceHeatGroups.true_positive.length > 0 ? (
-        <HeatmapLayer
-          points={differenceHeatGroups.true_positive}
-          radius={18}
-          blur={26}
-          maxZoom={18}
-          minOpacity={0.9}
-          gradient={TRUE_POSITIVE_HEAT_GRADIENT}
-        />
-      ) : null}
-
-      {layerVisibility.differenceHeatmap && differenceHeatGroups.false_positive.length > 0 ? (
-        <HeatmapLayer
-          points={differenceHeatGroups.false_positive}
-          radius={18}
-          blur={26}
-          maxZoom={18}
-          minOpacity={0.9}
-          gradient={FALSE_POSITIVE_HEAT_GRADIENT}
-        />
-      ) : null}
-
-      {layerVisibility.differenceHeatmap && differenceHeatGroups.false_negative.length > 0 ? (
-        <HeatmapLayer
-          points={differenceHeatGroups.false_negative}
-          radius={18}
-          blur={26}
-          maxZoom={18}
-          minOpacity={0.9}
-          gradient={FALSE_NEGATIVE_HEAT_GRADIENT}
-        />
-      ) : null}
-
-      {fireLayers?.extent && layerVisibility.extent ? (
-        <GeoJSON data={fireLayers.extent} {...getSelectedExtentOptions()} />
-      ) : null}
-
-      {!fireLayers?.extent && selectedExtentData && layerVisibility.extent ? (
-        <GeoJSON data={selectedExtentData} {...getSelectedExtentOptions()} />
-      ) : null}
-
-      {fireLayers?.origin && layerVisibility.origin ? (
-        <GeoJSON data={fireLayers.origin} {...getSelectedOriginOptions()} />
-      ) : null}
-
-      {!fireLayers?.origin && selectedOriginData && layerVisibility.origin ? (
-        <GeoJSON data={selectedOriginData} {...getSelectedOriginOptions()} />
-      ) : null}
-    </MapContainer>
+      <LoadingExtentOverlay
+        map={mapInstance}
+        bbox={loadingExtentBbox}
+        active={selectedFireLoading}
+      />
+    </>
   );
 }
 
@@ -704,6 +673,7 @@ export default function MapView({
   viewMode,
   mapProvider,
   mapStyle,
+  osmMapStyle,
   osmProjection,
   onOverviewSelect,
   overviewData,
@@ -712,6 +682,7 @@ export default function MapView({
   basemap,
   allowFallbackBasemap = false,
   fireLayers,
+  selectedFireLoading = false,
   layerVisibility,
 }) {
   const selectedExtentData = buildSelectedExtentGeojson(selectedFire);
@@ -723,14 +694,32 @@ export default function MapView({
   const basemapUrl = mapProvider === "gee"
     ? (basemap?.[mapStyle] ?? (hasFullBasemapSet ? basemap?.satellite : null))
     : null;
+  const osmTileConfig = osmMapStyle === "terrain"
+    ? {
+        tiles: OSM_TERRAIN_BASEMAP_TILES,
+        attribution: OSM_TERRAIN_BASEMAP_ATTRIBUTION,
+        maxZoom: OSM_TERRAIN_BASEMAP_MAX_ZOOM,
+      }
+    : {
+        tiles: OSM_STANDARD_BASEMAP_TILES,
+        attribution: OSM_STANDARD_BASEMAP_ATTRIBUTION,
+        maxZoom: OSM_STANDARD_BASEMAP_MAX_ZOOM,
+      };
   const mapProjection =
     mapProvider === "osm" && osmProjection === "globe" ? "globe" : "mercator";
-  const tileUrl = mapProvider === "osm"
-    ? FALLBACK_BASEMAP_URL
-    : basemapUrl ?? (allowFallbackBasemap ? FALLBACK_BASEMAP_URL : null);
+  const tileUrls = mapProvider === "osm"
+    ? osmTileConfig.tiles
+    : basemapUrl
+      ? [basemapUrl]
+      : allowFallbackBasemap
+        ? OSM_STANDARD_BASEMAP_TILES
+        : [];
   const tileAttribution = mapProvider === "osm"
-    ? FALLBACK_BASEMAP_ATTRIBUTION
-    : basemap?.attribution ?? (tileUrl ? FALLBACK_BASEMAP_ATTRIBUTION : undefined);
+    ? osmTileConfig.attribution
+    : basemap?.attribution ?? (tileUrls.length ? OSM_STANDARD_BASEMAP_ATTRIBUTION : undefined);
+  const tileMaxZoom = mapProvider === "osm"
+    ? osmTileConfig.maxZoom
+    : OSM_STANDARD_BASEMAP_MAX_ZOOM;
   const predictionHeatmapData = fireLayers?.predictionHeatmap ?? EMPTY_FEATURE_COLLECTION;
   const groundTruthData = fireLayers?.groundTruthHeatmap ?? EMPTY_FEATURE_COLLECTION;
   const differenceData = fireLayers?.differenceHeatmap ?? EMPTY_FEATURE_COLLECTION;
@@ -738,41 +727,27 @@ export default function MapView({
   const extentData = fireLayers?.extent ?? selectedExtentData ?? EMPTY_FEATURE_COLLECTION;
   const originData = fireLayers?.origin ?? selectedOriginData ?? EMPTY_FEATURE_COLLECTION;
 
-  if (viewMode === "3d") {
-    return (
-      <ThreeDMapView
-        mapRef={mapRef}
-        initialViewState={initialViewState}
-        mapProjection={mapProjection}
-        tileUrl={tileUrl}
-        tileAttribution={tileAttribution}
-        overviewData={overviewData}
-        onOverviewSelect={onOverviewSelect}
-        selectedId={selectedId}
-        predictionHeatmapData={predictionHeatmapData}
-        groundTruthData={groundTruthData}
-        differenceData={differenceData}
-        predictionPolygonData={predictionPolygonData}
-        extentData={extentData}
-        originData={originData}
-        layerVisibility={layerVisibility}
-      />
-    );
-  }
-
   return (
-    <LeafletMapView
+    <MapLibreView
       mapRef={mapRef}
       initialViewState={initialViewState}
-      tileUrl={tileUrl}
+      viewMode={viewMode}
+      mapProjection={mapProjection}
+      tileUrls={tileUrls}
       tileAttribution={tileAttribution}
+      tileMaxZoom={tileMaxZoom}
       overviewData={overviewData}
       onOverviewSelect={onOverviewSelect}
       selectedId={selectedId}
-      fireLayers={fireLayers}
+      loadingExtentBbox={selectedFire?.bbox ?? null}
+      selectedFireLoading={selectedFireLoading}
+      predictionHeatmapData={predictionHeatmapData}
+      groundTruthData={groundTruthData}
+      differenceData={differenceData}
+      predictionPolygonData={predictionPolygonData}
+      extentData={extentData}
+      originData={originData}
       layerVisibility={layerVisibility}
-      selectedExtentData={selectedExtentData}
-      selectedOriginData={selectedOriginData}
     />
   );
 }

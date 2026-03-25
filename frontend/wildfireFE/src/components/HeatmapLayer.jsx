@@ -42,6 +42,12 @@ export default function HeatmapLayer({
     });
     layerRef.current.addTo(map);
 
+    // The heatmap canvas should never block clicks on fire markers underneath.
+    const heatmapCanvas = layerRef.current?._canvas;
+    if (heatmapCanvas?.style) {
+      heatmapCanvas.style.pointerEvents = "none";
+    }
+
     return undefined;
   }, [blur, gradient, map, maxZoom, minOpacity, points, radius]);
 

@@ -41,7 +41,6 @@ export default function MapHud({
             <p className="eyebrow">Map legend</p>
             <h3>Layer cues</h3>
           </div>
-          <span className="panel-meta-pill">{activeLayerCount} active</span>
         </div>
 
         <div className="map-legend-grid">
