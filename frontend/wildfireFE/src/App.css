@@ -1099,6 +1099,19 @@ input:focus-visible {
   border-color: rgba(125, 211, 252, 0.28);
 }
 
+.layer-chip.is-disabled {
+  border-color: rgba(148, 163, 184, 0.14);
+  background: rgba(15, 23, 42, 0.24);
+  color: rgba(148, 163, 184, 0.78);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.layer-chip.is-disabled:hover {
+  transform: none;
+  border-color: rgba(148, 163, 184, 0.14);
+}
+
 .layer-chip input {
   position: absolute;
   opacity: 0;
@@ -1124,6 +1137,11 @@ input:focus-visible {
 .layer-chip.is-active .layer-chip-indicator {
   background: #fb923c;
   box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.14);
+}
+
+.layer-chip.is-disabled .layer-chip-indicator {
+  background: rgba(148, 163, 184, 0.38);
+  box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.08);
 }
 
 .pagination-controls button,

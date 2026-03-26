@@ -21,6 +21,7 @@ const DEFAULT_CATALOG_LIMIT = 100;
 const PAGE_SIZE = 8;
 const THREE_D_BEARING = -20;
 const THREE_D_PITCH = 55;
+const DEFAULT_OSM_MAP_STYLE = "terrain";
 const DEFAULT_OSM_PROJECTION = "mercator";
 const INITIAL_VIEW = {
   longitude: -100,
@@ -108,7 +109,7 @@ export default function App() {
   const [sampleIndex, setSampleIndex] = useState(null);
   const [viewMode, setViewMode] = useState("2d");
   const [incidentsView, setIncidentsView] = useState("catalog");
-  const [osmMapStyle, setOsmMapStyle] = useState(OSM_MAP_STYLES[0].value);
+  const [osmMapStyle, setOsmMapStyle] = useState(DEFAULT_OSM_MAP_STYLE);
   const [osmProjection, setOsmProjection] = useState(DEFAULT_OSM_PROJECTION);
   const [modelInputsOpen, setModelInputsOpen] = useState(false);
   const [environmentOpen, setEnvironmentOpen] = useState(false);

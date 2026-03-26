@@ -160,17 +160,27 @@ export default function FilterBar({
       <div className="top-bar-layers">
         <div className="layer-chip-row">
           {LAYER_OPTIONS.map((layer) => {
-            const checked = Boolean(layerVisibility[layer.key]);
+            const isDisabled = layer.key === "predictionPolygons" && viewMode !== "3d";
+            const checked = !isDisabled && Boolean(layerVisibility[layer.key]);
+            const tooltip = isDisabled
+              ? "Available only in 3D mode."
+              : LAYER_TOOLTIPS[layer.key];
 
             return (
               <label
                 key={layer.key}
-                className={"layer-chip tooltip-anchor" + (checked ? " is-active" : "")}
-                data-tooltip={LAYER_TOOLTIPS[layer.key]}
+                className={
+                  "layer-chip tooltip-anchor" +
+                  (checked ? " is-active" : "") +
+                  (isDisabled ? " is-disabled" : "")
+                }
+                data-tooltip={tooltip}
+                aria-disabled={isDisabled}
               >
                 <input
                   type="checkbox"
                   checked={checked}
+                  disabled={isDisabled}
                   onChange={() => onToggleLayer(layer.key)}
                 />
                 <span className="layer-chip-indicator" />

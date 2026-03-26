@@ -32,9 +32,10 @@ const OVERVIEW_LAYER_ID = "overview-circles";
 const PREDICTION_HEAT_LAYER_ID = "prediction-heat-2d";
 const GROUND_TRUTH_HEAT_LAYER_ID = "ground-truth-heat-2d";
 const DIFFERENCE_POINT_LAYER_ID = "difference-points-3d";
+const DIFFERENCE_TRUE_POSITIVE_LAYER_ID = `${DIFFERENCE_POINT_LAYER_ID}-true-positive`;
+const DIFFERENCE_FALSE_POSITIVE_LAYER_ID = `${DIFFERENCE_POINT_LAYER_ID}-false-positive`;
+const DIFFERENCE_FALSE_NEGATIVE_LAYER_ID = `${DIFFERENCE_POINT_LAYER_ID}-false-negative`;
 const PREDICTION_POLYGON_EXTRUSION_LAYER_ID = "prediction-polygons-3d";
-const PREDICTION_POLYGON_FILL_LAYER_ID = "prediction-polygons-fill-2d";
-const PREDICTION_POLYGON_OUTLINE_LAYER_ID = "prediction-polygons-outline-2d";
 const EXTENT_LAYER_ID = "extent";
 const ORIGIN_LAYER_ID = "origin";
 
@@ -247,6 +248,62 @@ function filterFeatureCollectionByOutcome(collection, outcome) {
   };
 }
 
+function buildOrderedLayerIds({ is3d, layerVisibility, showExtentLayer }) {
+  const orderedLayerIds = [];
+
+  if (layerVisibility.groundTruthHeatmap) {
+    orderedLayerIds.push(GROUND_TRUTH_HEAT_LAYER_ID);
+  }
+
+  if (layerVisibility.predictionHeatmap) {
+    orderedLayerIds.push(PREDICTION_HEAT_LAYER_ID);
+  }
+
+  if (layerVisibility.differenceHeatmap) {
+    orderedLayerIds.push(
+      DIFFERENCE_TRUE_POSITIVE_LAYER_ID,
+      DIFFERENCE_FALSE_POSITIVE_LAYER_ID,
+      DIFFERENCE_FALSE_NEGATIVE_LAYER_ID,
+    );
+  }
+
+  if (is3d && layerVisibility.predictionPolygons) {
+    orderedLayerIds.push(PREDICTION_POLYGON_EXTRUSION_LAYER_ID);
+  }
+
+  if (showExtentLayer) {
+    orderedLayerIds.push(EXTENT_LAYER_ID);
+  }
+
+  if (layerVisibility.origin) {
+    orderedLayerIds.push(ORIGIN_LAYER_ID);
+  }
+
+  if (layerVisibility.overview) {
+    orderedLayerIds.push(OVERVIEW_LAYER_ID);
+  }
+
+  return orderedLayerIds;
+}
+
+function reorderLayers(map, orderedLayerIds) {
+  if (!map || (typeof map.isStyleLoaded === "function" && !map.isStyleLoaded())) {
+    return;
+  }
+
+  let nextHigherLayerId;
+
+  for (let index = orderedLayerIds.length - 1; index >= 0; index -= 1) {
+    const layerId = orderedLayerIds[index];
+    if (!map.getLayer(layerId)) {
+      continue;
+    }
+
+    map.moveLayer(layerId, nextHigherLayerId);
+    nextHigherLayerId = layerId;
+  }
+}
+
 function createOverviewCircleLayer(selectedId) {
   const hasSelection = Boolean(selectedId);
   const selectedValue = selectedId ?? "";
@@ -282,8 +339,6 @@ function createOverviewCircleLayer(selectedId) {
         "case",
         ["==", ["get", "fireId"], selectedValue],
         "#fb923c",
-        hasSelection,
-        "rgba(148, 163, 184, 0.28)",
         "rgba(255,255,255,0.7)",
       ],
       "circle-stroke-width": [
@@ -296,16 +351,12 @@ function createOverviewCircleLayer(selectedId) {
         "case",
         ["==", ["get", "fireId"], selectedValue],
         1,
-        hasSelection,
-        0.42,
         1,
       ],
       "circle-stroke-opacity": [
         "case",
         ["==", ["get", "fireId"], selectedValue],
         1,
-        hasSelection,
-        0.42,
         1,
       ],
     },
@@ -348,33 +399,6 @@ function createPredictionExtrusionLayer() {
       "fill-extrusion-height": ["coalesce", ["to-number", ["get", "height"]], 0],
       "fill-extrusion-base": 0,
       "fill-extrusion-opacity": 0.78,
-    },
-  };
-}
-
-function createPredictionPolygonFillLayer() {
-  return {
-    id: PREDICTION_POLYGON_FILL_LAYER_ID,
-    type: "fill",
-    paint: {
-      "fill-color": buildProbabilityColorExpression(),
-      "fill-opacity": buildProbabilityOpacityExpression(0.15, 0.7),
-    },
-  };
-}
-
-function createPredictionPolygonOutlineLayer() {
-  return {
-    id: PREDICTION_POLYGON_OUTLINE_LAYER_ID,
-    type: "line",
-    paint: {
-      "line-color": "#f97316",
-      "line-width": 1,
-      "line-opacity": 0.82,
-    },
-    layout: {
-      "line-join": "round",
-      "line-cap": "round",
     },
   };
 }
@@ -495,6 +519,44 @@ function MapLibreView({
   const interactiveLayerIds = layerVisibility.overview ? [OVERVIEW_LAYER_ID] : [];
   const activeProjection = is3d ? mapProjection : "mercator";
   const showExtentLayer = layerVisibility.extent || selectedFireLoading;
+  const orderedLayerIds = useMemo(
+    () =>
+      buildOrderedLayerIds({
+        is3d,
+        layerVisibility,
+        showExtentLayer,
+      }),
+    [is3d, layerVisibility, showExtentLayer],
+  );
+
+  useEffect(() => {
+    if (!mapInstance) {
+      return undefined;
+    }
+
+    let frameId = null;
+
+    const queueReorder = () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null;
+        reorderLayers(mapInstance, orderedLayerIds);
+      });
+    };
+
+    queueReorder();
+    mapInstance.on("styledata", queueReorder);
+
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      mapInstance.off("styledata", queueReorder);
+    };
+  }, [mapInstance, orderedLayerIds]);
 
   return (
     <>
@@ -585,7 +647,7 @@ function MapLibreView({
             >
               <Layer
                 {...createHeatmapLayer({
-                  id: `${DIFFERENCE_POINT_LAYER_ID}-true-positive`,
+                  id: DIFFERENCE_TRUE_POSITIVE_LAYER_ID,
                   gradient: TRUE_POSITIVE_HEAT_GRADIENT,
                   mode: is3d ? "3d" : "2d",
                 })}
@@ -598,7 +660,7 @@ function MapLibreView({
             >
               <Layer
                 {...createHeatmapLayer({
-                  id: `${DIFFERENCE_POINT_LAYER_ID}-false-positive`,
+                  id: DIFFERENCE_FALSE_POSITIVE_LAYER_ID,
                   gradient: FALSE_POSITIVE_HEAT_GRADIENT,
                   mode: is3d ? "3d" : "2d",
                 })}
@@ -611,7 +673,7 @@ function MapLibreView({
             >
               <Layer
                 {...createHeatmapLayer({
-                  id: `${DIFFERENCE_POINT_LAYER_ID}-false-negative`,
+                  id: DIFFERENCE_FALSE_NEGATIVE_LAYER_ID,
                   gradient: FALSE_NEGATIVE_HEAT_GRADIENT,
                   mode: is3d ? "3d" : "2d",
                 })}
@@ -620,20 +682,13 @@ function MapLibreView({
           </>
         ) : null}
 
-        {layerVisibility.predictionPolygons ? (
+        {is3d && layerVisibility.predictionPolygons ? (
           <Source
             id="prediction-polygon-source"
             type="geojson"
             data={predictionPolygonData ?? EMPTY_FEATURE_COLLECTION}
           >
-            {is3d ? (
-              <Layer {...createPredictionExtrusionLayer()} />
-            ) : (
-              <>
-                <Layer {...createPredictionPolygonFillLayer()} />
-                <Layer {...createPredictionPolygonOutlineLayer()} />
-              </>
-            )}
+            <Layer {...createPredictionExtrusionLayer()} />
           </Source>
         ) : null}
 
