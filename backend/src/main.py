@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import csv
+from pathlib import Path
 from typing import List
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -10,12 +12,47 @@ from wildfire_api import WildfireService, get_settings
 from wildfire_api.graphql_schema import build_graphql_router
 from wildfire_api.schemas import (
     FireLayersResponse,
+    GoodPredictionRow,
     HealthResponse,
     SpreadRequest,
     SpreadResponse,
     TimelineResponse,
     WildfireSummary,
 )
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+GOOD_PREDICTION_EXPORTS = {
+    2021: PROJECT_ROOT / "good_fire_predictions_2021.csv",
+}
+
+
+def _load_good_predictions(year: int) -> List[GoodPredictionRow]:
+    csv_path = GOOD_PREDICTION_EXPORTS.get(year)
+    if csv_path is None:
+        return []
+    if not csv_path.is_file():
+        raise FileNotFoundError(f"CSV file '{csv_path}' was not found.")
+
+    rows: List[GoodPredictionRow] = []
+    with csv_path.open("r", newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for entry in reader:
+            rows.append(
+                GoodPredictionRow(
+                    fire_id=entry["fire_id"],
+                    year=int(entry["year"]),
+                    sample_index=int(entry["sample_index"]),
+                    target_date=entry["target_date"] or None,
+                    threshold=float(entry["threshold"]),
+                    ground_truth_pixels=int(entry["ground_truth_pixels"]),
+                    positive_pixels=int(entry["positive_pixels"]),
+                    precision=float(entry["precision"]),
+                    recall=float(entry["recall"]),
+                    f1=float(entry["f1"]),
+                    accuracy=float(entry["accuracy"]),
+                )
+            )
+    return rows
 
 
 def create_app() -> FastAPI:
@@ -64,6 +101,15 @@ def create_app() -> FastAPI:
     @app.get("/years", response_model=List[int])
     async def years() -> List[int]:
         return await run_in_threadpool(service.available_years)
+
+    @app.get("/good-predictions", response_model=List[GoodPredictionRow])
+    async def good_predictions(
+        year: int = Query(..., description="Year to read good predictions for"),
+    ) -> List[GoodPredictionRow]:
+        try:
+            return await run_in_threadpool(_load_good_predictions, year)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     @app.post("/findSpread", response_model=SpreadResponse)
     async def find_spread(request: SpreadRequest) -> SpreadResponse:

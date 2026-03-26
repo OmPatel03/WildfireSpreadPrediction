@@ -11,7 +11,7 @@ from .wsts_bridge import ensure_wsts_on_path
 
 ensure_wsts_on_path()
 import models  # noqa: E402
-from models import SMPModel  # noqa: E402
+from models import ResNet18UTAELightning, DomainAdversarialUTAELightning  # noqa: E402
 
 
 MODEL_HPARAM_KEYS = {
@@ -23,6 +23,10 @@ MODEL_HPARAM_KEYS = {
     "use_doy",
     "required_img_size",
 }
+
+LEGACY_OPTIONAL_STATE_PREFIXES = (
+    "fire_reconstruction_head.",
+)
 
 
 class WildfireModel:
@@ -53,7 +57,7 @@ class WildfireModel:
     def _resolve_model_class(self, hyper_params: Dict[str, Any]) -> type:
         class_path = hyper_params.get("_class_path")
         if not class_path:
-            return SMPModel
+            return DomainAdversarialUTAELightning
 
         class_name = str(class_path).split(".")[-1]
         model_class = getattr(models, class_name, None)
@@ -64,7 +68,7 @@ class WildfireModel:
             )
         return model_class
 
-    def _load_model_from_checkpoint(self, checkpoint_path: str) -> SMPModel:
+    def _load_model_from_checkpoint(self, checkpoint_path: str) -> DomainAdversarialUTAELightning:
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
         print(f"Loading model from checkpoint: {checkpoint_path}")
         hyper_params = checkpoint.get("hyper_parameters", {})
@@ -85,7 +89,28 @@ class WildfireModel:
 
         model = model_class(**init_args)
         state_dict = checkpoint["state_dict"]
-        model.load_state_dict(state_dict, strict=True)
+        filtered_state_dict = dict(state_dict)
+        stripped_keys = [
+            key
+            for key in state_dict
+            if key.startswith(LEGACY_OPTIONAL_STATE_PREFIXES)
+        ]
+        for key in stripped_keys:
+            filtered_state_dict.pop(key, None)
+        if stripped_keys:
+            print(
+                "Ignoring legacy checkpoint keys not used by the inference model: "
+                + ", ".join(sorted(stripped_keys))
+            )
+
+        missing_keys, unexpected_keys = model.load_state_dict(
+            filtered_state_dict, strict=False
+        )
+        if missing_keys or unexpected_keys:
+            raise RuntimeError(
+                "Checkpoint/model mismatch after compatibility filtering. "
+                f"Missing keys: {missing_keys}; unexpected keys: {unexpected_keys}"
+            )
         print("Model loaded successfully.")
         return model
 

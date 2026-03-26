@@ -10,6 +10,31 @@ from pydantic import BaseModel, Field
 
 def _resolve_path(value: Path) -> Path:
     return value.expanduser().resolve(strict=False)
+    expanded = value.expanduser()
+    if expanded.is_absolute():
+        return expanded
+    return Path.cwd() / expanded
+
+def _prefer_u50_mirror(value: Path) -> Path:
+    path = _resolve_path(value)
+    parts = path.parts
+    if len(parts) >= 3 and parts[1] == "home":
+        mirror = Path("/u50", *parts[2:])
+        if mirror.exists():
+            return mirror
+    return path
+
+def _first_existing_path(*candidates: Path) -> Path:
+    if not candidates:
+        raise ValueError("Expected at least one path candidate.")
+
+    for candidate in candidates:
+        preferred = _prefer_u50_mirror(candidate)
+        if preferred.exists():
+            return preferred
+
+    return _prefer_u50_mirror(candidates[0])
+    
 
 
 class Settings(BaseModel):
@@ -38,15 +63,20 @@ def _parse_years(raw: str | None) -> Tuple[int, int]:
 
 def _build_settings() -> Settings:
     backend_root = Path(__file__).resolve().parents[2]
+
     project_root = backend_root.parent
 
-    default_model = backend_root / "resources" / "model.ckpt"
-    default_hdf5 = Path("/u50/capstone/cs4zp6g17/data/hdf5")
+    default_model = _first_existing_path(
+        backend_root / "resources" / "model.ckpt",
+        backend_root / "requirements" / "model.ckpt",
+    )
+    default_hdf5 = Path("/u50/group17/data/hdf5")
+
 
     stats_years = _parse_years(os.getenv("WILDFIRE_STATS_YEARS"))
 
-    model_path = _resolve_path(Path(os.getenv("MODEL_CHECKPOINT", default_model)))
-    hdf5_root = _resolve_path(Path(os.getenv("HDF5_ROOT", default_hdf5)))
+    model_path = _prefer_u50_mirror(Path(os.getenv("MODEL_CHECKPOINT", default_model)))
+    hdf5_root = _prefer_u50_mirror(Path(os.getenv("HDF5_ROOT", default_hdf5)))
 
     return Settings(
         model_path=model_path,

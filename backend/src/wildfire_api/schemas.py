@@ -22,6 +22,23 @@ class HealthResponse(BaseModel):
     default_year: int
 
 
+class GoodPredictionRow(BaseModel):
+    fire_id: str = Field(alias="fireId")
+    year: int
+    sample_index: int = Field(alias="sampleIndex")
+    target_date: Optional[str] = Field(alias="targetDate")
+    threshold: float
+    ground_truth_pixels: int = Field(alias="groundTruthPixels")
+    positive_pixels: int = Field(alias="positivePixels")
+    precision: float
+    recall: float
+    f1: float
+    accuracy: float
+
+    class Config:
+        populate_by_name = True
+
+
 class BoundingBox(BaseModel):
     min_lon: float = Field(alias="minLon")
     min_lat: float = Field(alias="minLat")
