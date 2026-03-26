@@ -312,6 +312,7 @@ function createOverviewCircleLayer(selectedId) {
   return {
     id: OVERVIEW_LAYER_ID,
     type: "circle",
+    source: "overview-source",
     paint: {
       "circle-radius": [
         "case",
@@ -363,11 +364,12 @@ function createOverviewCircleLayer(selectedId) {
   };
 }
 
-function createHeatmapLayer({ id, gradient, filter, weightExpression = 1, mode = "2d" }) {
+function createHeatmapLayer({ id, gradient, filter, weightExpression = 1, mode = "2d", source }) {
   const is3d = mode === "3d";
   const layer = {
     id,
     type: "heatmap",
+    source,
     paint: {
       "heatmap-weight": weightExpression,
       "heatmap-intensity": is3d
@@ -394,6 +396,7 @@ function createPredictionExtrusionLayer() {
   return {
     id: PREDICTION_POLYGON_EXTRUSION_LAYER_ID,
     type: "fill-extrusion",
+    source: "prediction-polygon-source",
     paint: {
       "fill-extrusion-color": buildProbabilityColorExpression(),
       "fill-extrusion-height": ["coalesce", ["to-number", ["get", "height"]], 0],
@@ -403,10 +406,40 @@ function createPredictionExtrusionLayer() {
   };
 }
 
+function createPredictionPolygonFillLayer() {
+  return {
+    id: PREDICTION_POLYGON_FILL_LAYER_ID,
+    type: "fill",
+    source: "prediction-polygon-source",
+    paint: {
+      "fill-color": buildProbabilityColorExpression(),
+      "fill-opacity": buildProbabilityOpacityExpression(0.15, 0.7),
+    },
+  };
+}
+
+function createPredictionPolygonOutlineLayer() {
+  return {
+    id: PREDICTION_POLYGON_OUTLINE_LAYER_ID,
+    type: "line",
+    source: "prediction-polygon-source",
+    paint: {
+      "line-color": "#f97316",
+      "line-width": 1,
+      "line-opacity": 0.82,
+    },
+    layout: {
+      "line-join": "round",
+      "line-cap": "round",
+    },
+  };
+}
+
 function createExtentLayer() {
   return {
     id: EXTENT_LAYER_ID,
     type: "line",
+    source: "extent-source",
     paint: {
       "line-color": "#fb923c",
       "line-width": 3,
@@ -423,6 +456,7 @@ function createOriginLayer() {
   return {
     id: ORIGIN_LAYER_ID,
     type: "circle",
+    source: "origin-source",
     paint: {
       "circle-radius": 8,
       "circle-color": "#fff7ed",
@@ -617,6 +651,7 @@ function MapLibreView({
                   1,
                 ],
                 mode: is3d ? "3d" : "2d",
+                source: "prediction-source",
               })}
             />
           </Source>
@@ -633,6 +668,7 @@ function MapLibreView({
                 id: GROUND_TRUTH_HEAT_LAYER_ID,
                 gradient: GROUND_TRUTH_HEAT_GRADIENT,
                 mode: is3d ? "3d" : "2d",
+                source: "ground-truth-source",
               })}
             />
           </Source>
@@ -650,6 +686,7 @@ function MapLibreView({
                   id: DIFFERENCE_TRUE_POSITIVE_LAYER_ID,
                   gradient: TRUE_POSITIVE_HEAT_GRADIENT,
                   mode: is3d ? "3d" : "2d",
+                  source: "difference-true-positive-source",
                 })}
               />
             </Source>
@@ -663,6 +700,7 @@ function MapLibreView({
                   id: DIFFERENCE_FALSE_POSITIVE_LAYER_ID,
                   gradient: FALSE_POSITIVE_HEAT_GRADIENT,
                   mode: is3d ? "3d" : "2d",
+                  source: "difference-false-positive-source",
                 })}
               />
             </Source>
@@ -676,6 +714,7 @@ function MapLibreView({
                   id: DIFFERENCE_FALSE_NEGATIVE_LAYER_ID,
                   gradient: FALSE_NEGATIVE_HEAT_GRADIENT,
                   mode: is3d ? "3d" : "2d",
+                  source: "difference-false-negative-source",
                 })}
               />
             </Source>
