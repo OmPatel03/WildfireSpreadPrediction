@@ -63,7 +63,7 @@ Environment variables (optional overrides):
 ### DDoS / malicious traffic controls
 
 The deployment uses layered protections:
-* Cloudflare edge protections (rate limit + continuous monitoring).
+* Edge/network protections (rate limit + continuous monitoring).
 * Nginx route-level request throttling with `429` fallback.
 * Backend concurrency guard and fail-fast queue timeout for inference endpoints.
 
