@@ -10,6 +10,7 @@ const SCALE_KEYS = [
 ];
 
 export default function EnvironmentPanel({
+  className = "",
   isOpen,
   selectedFire,
   currentFrame,
@@ -21,7 +22,7 @@ export default function EnvironmentPanel({
   if (!isOpen) return null;
 
   return (
-    <div className="environment-panel app-overlay">
+    <div className={`environment-panel app-overlay${className ? ` ${className}` : ""}`}>
       <div className="panel-header compact-panel-header">
         <div>
           <p className="eyebrow">Environment</p>

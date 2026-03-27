@@ -11,14 +11,16 @@ const LEGEND_ITEMS = [
 ];
 
 export default function MapHud({
+  className = "",
+  cardClassName = "",
   selectedFire,
   layerVisibility,
 }) {
   const hasSelection = Boolean(selectedFire);
 
   return (
-    <div className={`map-hud app-overlay${hasSelection ? "" : " is-idle"}`}>
-      <div className="map-hud-card map-legend-card">
+    <div className={`map-hud app-overlay${hasSelection ? "" : " is-idle"}${className ? ` ${className}` : ""}`}>
+      <div className={`map-hud-card map-legend-card${cardClassName ? ` ${cardClassName}` : ""}`}>
         <div className="map-hud-header">
           <div>
             <p className="eyebrow">Map legend</p>

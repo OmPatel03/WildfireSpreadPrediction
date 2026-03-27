@@ -28,6 +28,7 @@ const LAYER_TOOLTIPS = {
 };
 
 export default function FilterBar({
+  className = "",
   year,
   yearOptions,
   onYearChange,
@@ -43,7 +44,7 @@ export default function FilterBar({
   onToggleLayer,
 }) {
   return (
-    <div className="top-bar">
+    <div className={`top-bar${className ? ` ${className}` : ""}`}>
       <div className="top-bar-header">
         <div className="top-bar-title">
           <p className="eyebrow">Control deck</p>

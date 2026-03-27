@@ -109,6 +109,7 @@ function RasterPreview({ raster, label, min, max, mean }) {
 }
 
 export default function ModelInputsPanel({
+  className = "",
   isOpen,
   selectedFire,
   currentFrame,
@@ -127,7 +128,7 @@ export default function ModelInputsPanel({
   if (!isOpen) return null;
 
   return (
-    <div className="model-inputs-panel app-overlay">
+    <div className={`model-inputs-panel app-overlay${className ? ` ${className}` : ""}`}>
       <div className="panel-header compact-panel-header">
         <div>
           <p className="eyebrow">Model inputs</p>

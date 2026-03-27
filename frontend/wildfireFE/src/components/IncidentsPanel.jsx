@@ -51,6 +51,7 @@ function StateCard({ title, copy, tone = "info" }) {
 }
 
 export default function IncidentsPanel({
+  className = "",
   fires,
   totalCount,
   selectedId,
@@ -78,7 +79,7 @@ export default function IncidentsPanel({
   const activeView = view === "detail" && fire ? "detail" : "catalog";
 
   return (
-    <aside className={`side-panel left-panel incidents-panel app-overlay${collapsed ? " is-collapsed" : ""}`}>
+    <aside className={`side-panel left-panel incidents-panel app-overlay${collapsed ? " is-collapsed" : ""}${className ? ` ${className}` : ""}`}>
       <div className="panel-header incidents-panel-header">
         {activeView === "detail" ? (
           <div className="incidents-panel-header-main">

@@ -1,6 +1,10 @@
 import FilterBar from "./FilterBar";
 
 export default function TopControls({
+  className = "",
+  deckClassName = "",
+  stackClassName = "",
+  onBackToIntro,
   year,
   yearOptions,
   onYearChange,
@@ -25,8 +29,9 @@ export default function TopControls({
   onToggleEnvironment,
 }) {
   return (
-    <div className="top-controls-layout app-overlay">
+    <div className={`top-controls-layout app-overlay${className ? ` ${className}` : ""}`}>
       <FilterBar
+        className={deckClassName}
         year={year}
         yearOptions={yearOptions}
         onYearChange={onYearChange}
@@ -42,8 +47,16 @@ export default function TopControls({
         onToggleLayer={onToggleLayer}
       />
 
-      <div className="control-actions-stack">
+      <div className={`control-actions-stack${stackClassName ? ` ${stackClassName}` : ""}`}>
         <div className="toolbar-actions">
+          <button
+            type="button"
+            className="control-button"
+            onClick={onBackToIntro}
+          >
+            Back to intro
+          </button>
+
           <button
             type="button"
             className="control-button control-button-reset"

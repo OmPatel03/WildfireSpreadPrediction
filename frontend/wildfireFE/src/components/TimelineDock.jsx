@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import "./TimelineDock.css";
 
 export default function TimelineDock({
+  className = "",
   timeline,
   currentFrame,
   framePosition,
@@ -35,7 +36,7 @@ export default function TimelineDock({
   };
 
   return (
-    <div className={`timeline-dock app-overlay${error ? " is-error" : ""}${loading ? " is-loading" : ""}`}>
+    <div className={`timeline-dock app-overlay${error ? " is-error" : ""}${loading ? " is-loading" : ""}${className ? ` ${className}` : ""}`}>
       <div className="timeline-dock-header">
         <div>
           <p className="eyebrow">Timeline</p>

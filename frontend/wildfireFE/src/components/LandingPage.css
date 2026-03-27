@@ -1,0 +1,174 @@
+.landing-screen {
+  inset: 0;
+  z-index: 1100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.landing-screen.landing-screen-exit-to-app,
+.landing-screen.landing-screen-enter-from-app {
+  pointer-events: none;
+}
+
+.landing-screen-backdrop {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(249, 115, 22, 0.14), transparent 28%),
+    radial-gradient(circle at 82% 16%, rgba(56, 189, 248, 0.12), transparent 26%),
+    linear-gradient(180deg, rgba(2, 6, 23, 0.22) 0%, rgba(2, 6, 23, 0.66) 100%);
+}
+
+.landing-shell {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 760px);
+}
+
+.landing-card {
+  border: 1px solid var(--panel-border);
+  border-radius: 28px;
+  background: var(--glass-fallback-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--panel-shadow);
+}
+
+.landing-screen.landing-screen-exit-to-app .landing-card {
+  animation: landing-card-exit-to-app 550ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.landing-screen.landing-screen-exit-to-app .landing-screen-backdrop {
+  animation: landing-backdrop-fade-out 550ms ease both;
+}
+
+.landing-screen.landing-screen-enter-from-app .landing-card {
+  animation: landing-card-enter-from-app 550ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.landing-screen.landing-screen-enter-from-app .landing-screen-backdrop {
+  animation: landing-backdrop-fade-in 550ms ease both;
+}
+
+.landing-hero-card {
+  padding: 34px 34px 30px;
+}
+
+.landing-hero-card h1 {
+  margin: 8px 0 16px;
+  width: 100%;
+  font-size: clamp(3.5rem, 10vw, 6.4rem);
+  line-height: 0.9;
+  letter-spacing: -0.07em;
+  text-align: center;
+}
+
+.landing-tagline {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: clamp(1rem, 2.1vw, 1.25rem);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.landing-actions {
+  display: grid;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.landing-primary-action {
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 18px;
+  border-color: rgba(251, 146, 60, 0.28);
+  background:
+    linear-gradient(135deg, rgba(249, 115, 22, 0.88), rgba(239, 68, 68, 0.74)),
+    var(--glass-control-bg);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 18px 36px rgba(239, 68, 68, 0.24);
+  color: var(--text-primary);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.landing-action-hint {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+@keyframes landing-card-exit-to-app {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(120px);
+  }
+}
+
+@keyframes landing-card-enter-from-app {
+  0% {
+    opacity: 0;
+    transform: translateY(-44px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes landing-backdrop-fade-out {
+  0% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes landing-backdrop-fade-in {
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .landing-card {
+    background: var(--glass-bg-strong);
+  }
+}
+
+@media (max-width: 640px) {
+  .landing-screen {
+    padding: 14px;
+  }
+
+  .landing-shell {
+    width: 100%;
+  }
+
+  .landing-hero-card {
+    padding: 20px 18px;
+    border-radius: 22px;
+  }
+
+  .landing-tagline {
+    max-width: none;
+  }
+
+  .landing-actions {
+    margin-top: 22px;
+  }
+}

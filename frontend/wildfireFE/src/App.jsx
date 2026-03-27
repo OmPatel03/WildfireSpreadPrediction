@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import "./styles/app-shell.css";
 import EnvironmentPanel from "./components/EnvironmentPanel";
 import IncidentsPanel from "./components/IncidentsPanel";
+import LandingPage from "./components/LandingPage";
 import MapAtmosphere from "./components/MapAtmosphere";
 import MapHud from "./components/MapHud";
 import MapView from "./components/MapView";
@@ -54,6 +55,26 @@ const DEFAULT_LAYER_VISIBILITY = {
   extent: true,
   origin: true,
 };
+const LANDING_SESSION_STORAGE_KEY = "wispr:entered-app";
+const TRANSITION_DURATION_MS = 650;
+
+function getInitialScreen() {
+  if (typeof window === "undefined") {
+    return "landing";
+  }
+
+  try {
+    return window.sessionStorage.getItem(LANDING_SESSION_STORAGE_KEY) === "true"
+      ? "app"
+      : "landing";
+  } catch {
+    return "landing";
+  }
+}
+
+function joinClasses(...classes) {
+  return classes.filter(Boolean).join(" ");
+}
 
 function buildOverviewGeojson(fires) {
   return {
@@ -82,6 +103,8 @@ function buildOverviewGeojson(fires) {
 export default function App() {
   const mapRef = useRef(null);
 
+  const [screen, setScreen] = useState(getInitialScreen);
+  const [transitionPhase, setTransitionPhase] = useState("idle");
   const [year, setYear] = useState(DEFAULT_YEAR);
   const [threshold, setThreshold] = useState(DEFAULT_THRESHOLD);
   const [catalogLimit, setCatalogLimit] = useState(DEFAULT_CATALOG_LIMIT);
@@ -414,6 +437,65 @@ export default function App() {
     return layersResponse?.fire ?? selectedFire;
   }, [layersResponse, selectedFire]);
 
+  const showLandingOverlay = screen === "landing" || transitionPhase !== "idle";
+  const showAppOverlay = screen === "app" || transitionPhase !== "idle";
+  const landingTransitionClass = joinClasses(
+    transitionPhase === "entering-app" && "landing-screen-exit-to-app",
+    transitionPhase === "entering-landing" && "landing-screen-enter-from-app",
+  );
+  const appOverlayTransitionClass = joinClasses(
+    transitionPhase === "entering-app" && "app-overlay-transition app-overlay-enter-from-landing",
+    transitionPhase === "entering-landing" && "app-overlay-transition app-overlay-exit-to-landing",
+    screen === "app" && transitionPhase === "idle" && "app-overlay-settled",
+  );
+
+  useEffect(() => {
+    if (transitionPhase === "idle") {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      if (transitionPhase === "entering-app") {
+        setScreen("app");
+      } else if (transitionPhase === "entering-landing") {
+        setScreen("landing");
+      }
+      setTransitionPhase("idle");
+    }, TRANSITION_DURATION_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [transitionPhase]);
+
+  const handleEnterApp = () => {
+    if (transitionPhase !== "idle" || screen === "app") {
+      return;
+    }
+
+    try {
+      window.sessionStorage.setItem(LANDING_SESSION_STORAGE_KEY, "true");
+    } catch {
+      // Ignore storage failures and continue showing the app for this render.
+    }
+
+    setTransitionPhase("entering-app");
+  };
+
+  const handleReturnToIntro = () => {
+    if (transitionPhase !== "idle" || screen === "landing") {
+      return;
+    }
+
+    try {
+      window.sessionStorage.removeItem(LANDING_SESSION_STORAGE_KEY);
+    } catch {
+      // Ignore storage failures and continue showing the landing screen.
+    }
+
+    setTransitionPhase("entering-landing");
+  };
+
   return (
     <div className="app-shell">
       <MapView
@@ -434,92 +516,112 @@ export default function App() {
 
       <MapAtmosphere />
 
-      <MapHud
-        selectedFire={selectedFire}
-        layerVisibility={layerVisibility}
-      />
+      {showLandingOverlay ? (
+        <LandingPage onEnter={handleEnterApp} className={landingTransitionClass} />
+      ) : null}
 
-      <TopControls
-        year={year}
-        yearOptions={yearOptions}
-        onYearChange={handleYearChange}
-        threshold={threshold}
-        onThresholdChange={setThreshold}
-        catalogLimit={catalogLimit}
-        onCatalogLimitChange={setCatalogLimit}
-        osmMapStyle={osmMapStyle}
-        osmMapStyles={OSM_MAP_STYLES}
-        onOsmMapStyleChange={setOsmMapStyle}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-        osmProjection={osmProjection}
-        onOsmProjectionChange={setOsmProjection}
-        layerVisibility={layerVisibility}
-        onToggleLayer={handleToggleLayer}
-        selectedFire={selectedFire}
-        onResetApp={handleResetApp}
-        modelInputsOpen={modelInputsOpen}
-        onToggleModelInputs={() => setModelInputsOpen((open) => !open)}
-        environmentOpen={environmentOpen}
-        onToggleEnvironment={() => setEnvironmentOpen((open) => !open)}
-      />
+      {showAppOverlay ? (
+        <>
+          <MapHud
+            cardClassName={joinClasses(
+              "app-overlay-left",
+              "app-overlay-left-secondary",
+              appOverlayTransitionClass,
+            )}
+            selectedFire={selectedFire}
+            layerVisibility={layerVisibility}
+          />
 
-      <ModelInputsPanel
-        isOpen={modelInputsOpen}
-        onClose={() => setModelInputsOpen(false)}
-        selectedFire={selectedFire}
-        currentFrame={currentFrame}
-        loading={layersLoading}
-        error={layersError}
-        modelInputs={layersResponse?.layers?.modelInputs}
-      />
+          <TopControls
+            deckClassName={joinClasses("app-overlay-left", appOverlayTransitionClass)}
+            stackClassName={joinClasses("app-overlay-right", appOverlayTransitionClass)}
+            onBackToIntro={handleReturnToIntro}
+            year={year}
+            yearOptions={yearOptions}
+            onYearChange={handleYearChange}
+            threshold={threshold}
+            onThresholdChange={setThreshold}
+            catalogLimit={catalogLimit}
+            onCatalogLimitChange={setCatalogLimit}
+            osmMapStyle={osmMapStyle}
+            osmMapStyles={OSM_MAP_STYLES}
+            onOsmMapStyleChange={setOsmMapStyle}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            osmProjection={osmProjection}
+            onOsmProjectionChange={setOsmProjection}
+            layerVisibility={layerVisibility}
+            onToggleLayer={handleToggleLayer}
+            selectedFire={selectedFire}
+            onResetApp={handleResetApp}
+            modelInputsOpen={modelInputsOpen}
+            onToggleModelInputs={() => setModelInputsOpen((open) => !open)}
+            environmentOpen={environmentOpen}
+            onToggleEnvironment={() => setEnvironmentOpen((open) => !open)}
+          />
 
-      <EnvironmentPanel
-        isOpen={environmentOpen}
-        onClose={() => setEnvironmentOpen(false)}
-        selectedFire={selectedFire}
-        currentFrame={currentFrame}
-        scales={environmentScales}
-        onScaleChange={handleEnvironmentScaleChange}
-        onReset={handleResetEnvironment}
-      />
+          <ModelInputsPanel
+            className={joinClasses("app-overlay-right", appOverlayTransitionClass)}
+            isOpen={modelInputsOpen}
+            onClose={() => setModelInputsOpen(false)}
+            selectedFire={selectedFire}
+            currentFrame={currentFrame}
+            loading={layersLoading}
+            error={layersError}
+            modelInputs={layersResponse?.layers?.modelInputs}
+          />
 
-      <IncidentsPanel
-        fires={visibleCatalog}
-        totalCount={filteredCatalog.length}
-        selectedId={selectedId}
-        loading={catalogLoading}
-        error={catalogError}
-        searchTerm={searchTerm}
-        onSearchChange={setSearchTerm}
-        page={catalogPage}
-        totalPages={totalPages}
-        onPrevPage={() => setCatalogPage((page) => Math.max(page - 1, 0))}
-        onNextPage={() => setCatalogPage((page) => Math.min(page + 1, totalPages - 1))}
-        onSelectFire={handleSelectFire}
-        collapsed={collapsedPanels.incidents}
-        onToggleCollapse={() => handleTogglePanelCollapse("incidents")}
-        view={incidentsView}
-        onBackToCatalog={() => setIncidentsView("catalog")}
-        fire={insightFire}
-        summary={fireSummary}
-        frame={currentFrame}
-        timelineLoading={timelineLoading}
-        timelineError={timelineError}
-        layersLoading={layersLoading}
-        layerError={layersError}
-      />
+          <EnvironmentPanel
+            className={joinClasses("app-overlay-right", appOverlayTransitionClass)}
+            isOpen={environmentOpen}
+            onClose={() => setEnvironmentOpen(false)}
+            selectedFire={selectedFire}
+            currentFrame={currentFrame}
+            scales={environmentScales}
+            onScaleChange={handleEnvironmentScaleChange}
+            onReset={handleResetEnvironment}
+          />
 
-      {selectedFire ? (
-        <TimelineDock
-          timeline={timeline}
-          currentFrame={currentFrame}
-          framePosition={currentFramePosition}
-          onChangePosition={handleTimelineChange}
-          onStep={handleTimelineStep}
-          loading={timelineLoading}
-          error={timelineError}
-        />
+          <IncidentsPanel
+            className={joinClasses("app-overlay-left", appOverlayTransitionClass)}
+            fires={visibleCatalog}
+            totalCount={filteredCatalog.length}
+            selectedId={selectedId}
+            loading={catalogLoading}
+            error={catalogError}
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            page={catalogPage}
+            totalPages={totalPages}
+            onPrevPage={() => setCatalogPage((page) => Math.max(page - 1, 0))}
+            onNextPage={() => setCatalogPage((page) => Math.min(page + 1, totalPages - 1))}
+            onSelectFire={handleSelectFire}
+            collapsed={collapsedPanels.incidents}
+            onToggleCollapse={() => handleTogglePanelCollapse("incidents")}
+            view={incidentsView}
+            onBackToCatalog={() => setIncidentsView("catalog")}
+            fire={insightFire}
+            summary={fireSummary}
+            frame={currentFrame}
+            timelineLoading={timelineLoading}
+            timelineError={timelineError}
+            layersLoading={layersLoading}
+            layerError={layersError}
+          />
+
+          {selectedFire ? (
+            <TimelineDock
+              className={joinClasses("app-overlay-right", appOverlayTransitionClass)}
+              timeline={timeline}
+              currentFrame={currentFrame}
+              framePosition={currentFramePosition}
+              onChangePosition={handleTimelineChange}
+              onStep={handleTimelineStep}
+              loading={timelineLoading}
+              error={timelineError}
+            />
+          ) : null}
+        </>
       ) : null}
     </div>
   );
