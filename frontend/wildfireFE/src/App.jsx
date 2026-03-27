@@ -8,6 +8,7 @@ import MapView from "./components/MapView";
 import ModelInputsPanel from "./components/ModelInputsPanel";
 import TimelineDock from "./components/TimelineDock";
 import {
+  fetchGoodPredictions,
   fetchLayers,
   fetchOverview,
   fetchTimeline,
@@ -23,6 +24,8 @@ const THREE_D_BEARING = -20;
 const THREE_D_PITCH = 55;
 const DEFAULT_OSM_MAP_STYLE = "terrain";
 const DEFAULT_OSM_PROJECTION = "mercator";
+const FIRE_DETAIL_MAX_ZOOM = 12;
+const FIRE_LOADING_EXTENT_MAX_ZOOM = 8.3;
 const INITIAL_VIEW = {
   longitude: -100,
   latitude: 40,
@@ -138,6 +141,26 @@ export default function App() {
   const debouncedSampleIndex = useDebouncedValue(sampleIndex, 200);
   const debouncedEnvironmentScales = useDebouncedValue(environmentScales, 300);
 
+  const handleYearChange = (nextYear) => {
+    if (nextYear === year) {
+      return;
+    }
+
+    setCatalog([]);
+    setCatalogError(null);
+    setSelectedId(null);
+    setTimeline(null);
+    setTimelineLoading(false);
+    setSampleIndex(null);
+    setTimelineError(null);
+    setLayersResponse(null);
+    setLayersLoading(false);
+    setLayersError(null);
+    setSelectedFireLoadingId(null);
+    setIncidentsView("catalog");
+    setYear(nextYear);
+  };
+
   useEffect(() => {
     let ignore = false;
     const controller = new AbortController();
@@ -174,17 +197,44 @@ export default function App() {
       setCatalogError(null);
 
       try {
+        const overviewLimit = year === 2021 ? 1000 : catalogLimit;
         const rows = await fetchOverview({
           year,
-          limit: catalogLimit,
+          limit: overviewLimit,
           offset: 0,
           signal: overviewController.signal,
         });
+        let filteredRows = rows;
+
+        if (year === 2021) {
+          try {
+            const goodPredictions = await fetchGoodPredictions({
+              year,
+              signal: overviewController.signal,
+            });
+            const allowedFireIds = new Set(
+              goodPredictions
+                .map((entry) => entry.fireId)
+                .filter(Boolean),
+            );
+            filteredRows = rows.filter((fire) => allowedFireIds.has(fire.fireId));
+          } catch (error) {
+            if (error?.name === "AbortError") {
+              throw error;
+            }
+            console.warn("Unable to load good-prediction whitelist for 2021:", error);
+          }
+        }
+
+        if (year === 2021) {
+          filteredRows = filteredRows.slice(0, catalogLimit);
+        }
+
         if (!ignore) {
-          setCatalog(rows);
+          setCatalog(filteredRows);
           setCatalogPage(0);
           setSelectedId((currentId) =>
-            currentId && !rows.some((fire) => fire.fireId === currentId)
+            currentId && !filteredRows.some((fire) => fire.fireId === currentId)
               ? null
               : currentId,
           );
@@ -192,7 +242,7 @@ export default function App() {
 
         try {
           const enriched = await annotateCatalogWithLocations(
-            rows,
+            filteredRows,
             MAPBOX_TOKEN,
             geocodeController.signal,
           );
@@ -259,6 +309,7 @@ export default function App() {
     () => catalog.find((fire) => fire.fireId === selectedId) ?? null,
     [catalog, selectedId],
   );
+  const selectedFireYear = selectedFire?.year ?? null;
   const mapInitialViewState = useMemo(
     () =>
       viewMode === "3d"
@@ -277,8 +328,9 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (!selectedId) {
+    if (!selectedId || selectedFireYear !== year) {
       setTimeline(null);
+      setTimelineLoading(false);
       setSampleIndex(null);
       setTimelineError(null);
       setSelectedFireLoadingId(null);
@@ -335,7 +387,7 @@ export default function App() {
       ignore = true;
       controller.abort();
     };
-  }, [selectedId, year]);
+  }, [selectedFireYear, selectedId, year]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -353,13 +405,21 @@ export default function App() {
   useEffect(() => {
     if (
       !selectedId ||
+      selectedFireYear !== year ||
       sampleIndex === null ||
-      sampleIndex === undefined ||
-      debouncedSampleIndex === null ||
-      debouncedSampleIndex === undefined
+      sampleIndex === undefined
     ) {
       setLayersResponse(null);
+      setLayersLoading(false);
       setLayersError(null);
+      return;
+    }
+
+    if (
+      debouncedSampleIndex === null ||
+      debouncedSampleIndex === undefined ||
+      debouncedSampleIndex !== sampleIndex
+    ) {
       return;
     }
 
@@ -407,7 +467,15 @@ export default function App() {
       ignore = true;
       controller.abort();
     };
-  }, [debouncedEnvironmentScales, debouncedSampleIndex, debouncedThreshold, sampleIndex, selectedId, year]);
+  }, [
+    debouncedEnvironmentScales,
+    debouncedSampleIndex,
+    debouncedThreshold,
+    sampleIndex,
+    selectedFireYear,
+    selectedId,
+    year,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -490,7 +558,7 @@ export default function App() {
           ],
           {
             padding: fitPadding,
-            maxZoom: 13,
+            maxZoom: FIRE_DETAIL_MAX_ZOOM,
             duration: viewMode === "3d" ? 1000 : 850,
             ...cameraOptions,
           },
@@ -513,7 +581,7 @@ export default function App() {
         ],
         {
           padding: fitPadding,
-          maxZoom: 12.5,
+          maxZoom: FIRE_LOADING_EXTENT_MAX_ZOOM,
           duration: viewMode === "3d" ? 1000 : 850,
           ...cameraOptions,
         },
@@ -523,7 +591,7 @@ export default function App() {
 
     map.flyTo({
       center: [selectedFire.longitude, selectedFire.latitude],
-      zoom: 8.2,
+      zoom: Math.min(8.2, FIRE_DETAIL_MAX_ZOOM),
       duration: viewMode === "3d" ? 1000 : 850,
       ...cameraOptions,
     });
@@ -579,6 +647,36 @@ export default function App() {
     setEnvironmentScales(DEFAULT_ENVIRONMENT_SCALES);
   };
 
+  const handleResetApp = () => {
+    const resetYear = yearOptions.includes(DEFAULT_YEAR)
+      ? DEFAULT_YEAR
+      : yearOptions[yearOptions.length - 1] ?? DEFAULT_YEAR;
+
+    setYear(resetYear);
+    setThreshold(DEFAULT_THRESHOLD);
+    setCatalogLimit(DEFAULT_CATALOG_LIMIT);
+    setSearchTerm("");
+    setCatalogPage(0);
+    setSelectedId(null);
+    setSampleIndex(null);
+    setIncidentsView("catalog");
+    setOsmMapStyle(DEFAULT_OSM_MAP_STYLE);
+    setModelInputsOpen(false);
+    setEnvironmentOpen(false);
+    setCollapsedPanels({
+      incidents: false,
+    });
+    setEnvironmentScales(DEFAULT_ENVIRONMENT_SCALES);
+    setLayerVisibility(DEFAULT_LAYER_VISIBILITY);
+    setTimeline(null);
+    setTimelineLoading(false);
+    setTimelineError(null);
+    setLayersResponse(null);
+    setLayersLoading(false);
+    setLayersError(null);
+    setSelectedFireLoadingId(null);
+  };
+
   const handleTogglePanelCollapse = (panelKey) => {
     setCollapsedPanels((current) => ({
       ...current,
@@ -594,6 +692,23 @@ export default function App() {
     setEnvironmentOpen((open) => !open);
   };
 
+  const beginFrameTransition = (nextSampleIndex) => {
+    if (
+      !selectedId ||
+      nextSampleIndex === null ||
+      nextSampleIndex === undefined ||
+      nextSampleIndex === sampleIndex
+    ) {
+      return;
+    }
+
+    setSelectedFireLoadingId(selectedId);
+    setLayersLoading(true);
+    setLayersResponse(null);
+    setLayersError(null);
+    setSampleIndex(nextSampleIndex);
+  };
+
   const handleTimelineStep = (step) => {
     const frames = timeline?.frames ?? [];
     if (!frames.length) return;
@@ -602,14 +717,14 @@ export default function App() {
       Math.max(currentFramePosition + step, 0),
       frames.length - 1,
     );
-    setSampleIndex(frames[nextPosition]?.sampleIndex ?? null);
+    beginFrameTransition(frames[nextPosition]?.sampleIndex ?? null);
   };
 
   const handleTimelineChange = (position) => {
     const frames = timeline?.frames ?? [];
     const nextFrame = frames[position];
     if (nextFrame) {
-      setSampleIndex(nextFrame.sampleIndex);
+      beginFrameTransition(nextFrame.sampleIndex);
     }
   };
 
@@ -638,6 +753,7 @@ export default function App() {
         selectedFire={selectedFire}
         fireLayers={fireLayers}
         selectedFireLoading={selectedFireLoading}
+        fireDetailMaxZoom={FIRE_DETAIL_MAX_ZOOM}
         layerVisibility={layerVisibility}
       />
       <div className="map-atmosphere" aria-hidden="true">
@@ -659,7 +775,7 @@ export default function App() {
         <FilterBar
           year={year}
           yearOptions={yearOptions}
-          onYearChange={setYear}
+          onYearChange={handleYearChange}
           threshold={threshold}
           onThresholdChange={setThreshold}
           catalogLimit={catalogLimit}
@@ -668,14 +784,21 @@ export default function App() {
           osmMapStyles={OSM_MAP_STYLES}
           onOsmMapStyleChange={setOsmMapStyle}
           viewMode={viewMode}
-          osmProjection={osmProjection}
-          onOsmProjectionChange={setOsmProjection}
           layerVisibility={layerVisibility}
           onToggleLayer={handleToggleLayer}
         />
 
         <div className="control-actions-stack">
           <div className="toolbar-actions">
+            <button
+              type="button"
+              className="control-button control-button-reset"
+              onClick={handleResetApp}
+              disabled={!selectedFire}
+            >
+              Reset view
+            </button>
+
             <button
               type="button"
               className={(modelInputsOpen ? "control-button active" : "control-button") + " tooltip-anchor"}
@@ -694,7 +817,10 @@ export default function App() {
               Environment
             </button>
 
-            <div className="segmented-control">
+            <div
+              className="segmented-control"
+              style={{ "--active-segment-index": viewMode === "3d" ? 1 : 0 }}
+            >
               <button
                 type="button"
                 className={"tooltip-anchor" + (viewMode === "2d" ? " active" : "")}
@@ -706,12 +832,40 @@ export default function App() {
               <button
                 type="button"
                 className={"tooltip-anchor" + (viewMode === "3d" ? " active" : "")}
-                data-tooltip="Use the pitched 3D map with extruded prediction masks."
+                data-tooltip="Use the pitched 3D map."
                 onClick={() => setViewMode("3d")}
               >
                 3D
               </button>
             </div>
+
+            {viewMode === "3d" ? (
+              <div className="action-stack-segment-group">
+                <div
+                  className="segmented-control"
+                  role="group"
+                  aria-label="OSM 3D projection"
+                  style={{ "--active-segment-index": osmProjection === "globe" ? 1 : 0 }}
+                >
+                  <button
+                    type="button"
+                    className={"tooltip-anchor" + (osmProjection === "mercator" ? " active" : "")}
+                    data-tooltip="Show the 3D map in the standard flat mercator projection."
+                    onClick={() => setOsmProjection("mercator")}
+                  >
+                    Flat
+                  </button>
+                  <button
+                    type="button"
+                    className={"tooltip-anchor tooltip-align-right" + (osmProjection === "globe" ? " active" : "")}
+                    data-tooltip="Wrap the 3D map onto a globe projection."
+                    onClick={() => setOsmProjection("globe")}
+                  >
+                    Globe
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

@@ -12,8 +12,6 @@ const CONTROL_TOOLTIPS = {
   year: "Choose which wildfire season to browse and analyze.",
   catalogLimit: "Set how many incidents are loaded into the catalog for this year.",
   basemap: "Pick the OpenStreetMap basemap style behind the wildfire layers.",
-  flatProjection: "Show the 3D map in the standard flat mercator projection.",
-  globeProjection: "Wrap the 3D map onto a globe projection.",
   threshold: "Adjust the prediction cutoff used for the selected fire's spread layers.",
 };
 
@@ -39,13 +37,9 @@ export default function FilterBar({
   osmMapStyles,
   onOsmMapStyleChange,
   viewMode,
-  osmProjection,
-  onOsmProjectionChange,
   layerVisibility,
   onToggleLayer,
 }) {
-  const showOsmProjectionControl = viewMode === "3d";
-
   return (
     <div className="top-bar">
       <div className="top-bar-header">
@@ -62,7 +56,7 @@ export default function FilterBar({
       </div>
 
       <div className="top-bar-main">
-        <div className={"top-bar-controls" + (showOsmProjectionControl ? " has-globe-control" : "")}>
+        <div className="top-bar-controls">
           <div className="control-group compact">
             <label htmlFor="year-select">Year</label>
             <div className="control-input-anchor tooltip-anchor" data-tooltip={CONTROL_TOOLTIPS.year}>
@@ -113,30 +107,6 @@ export default function FilterBar({
               </select>
             </div>
           </div>
-
-          {showOsmProjectionControl ? (
-            <div className="control-group compact projection-group">
-              <label>Projection</label>
-              <div className="segmented-control" role="group" aria-label="OSM 3D projection">
-                <button
-                  type="button"
-                  className={"tooltip-anchor" + (osmProjection === "mercator" ? " active" : "")}
-                  data-tooltip={CONTROL_TOOLTIPS.flatProjection}
-                  onClick={() => onOsmProjectionChange("mercator")}
-                >
-                  Flat
-                </button>
-                <button
-                  type="button"
-                  className={"tooltip-anchor" + (osmProjection === "globe" ? " active" : "")}
-                  data-tooltip={CONTROL_TOOLTIPS.globeProjection}
-                  onClick={() => onOsmProjectionChange("globe")}
-                >
-                  Globe
-                </button>
-              </div>
-            </div>
-          ) : null}
 
           <div className="control-group compact range-group threshold-row-group">
             <label htmlFor="threshold-range">

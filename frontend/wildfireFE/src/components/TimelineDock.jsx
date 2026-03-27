@@ -18,6 +18,9 @@ export default function TimelineDock({
 
   const maxFramePosition = Math.max(frameCount - 1, 0);
   const sliderPosition = Math.min(pendingPosition ?? 0, maxFramePosition);
+  const sliderProgress = maxFramePosition > 0
+    ? (sliderPosition / maxFramePosition) * 100
+    : 0;
   const showDock = loading || error || frameCount > 0;
 
   if (!showDock) return null;
@@ -85,6 +88,7 @@ export default function TimelineDock({
             onBlur={commitPendingPosition}
             disabled={loading || frameCount <= 1}
             aria-label="Timeline scrubber"
+            style={{ "--timeline-progress": `${sliderProgress}%` }}
           />
         </>
       )}

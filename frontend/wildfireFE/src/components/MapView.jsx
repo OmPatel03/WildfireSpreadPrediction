@@ -237,6 +237,21 @@ function buildHeatmapColorExpression(gradient) {
   return expression;
 }
 
+function buildHeatmapOpacityExpression(is3d, opacityScale = 1) {
+  const baseStops = is3d
+    ? [0, 0.78, 8, 0.88, 12, 0.78, 16, 0.58]
+    : [0, 0.72, 8, 0.84, 12, 0.72, 16, 0.5];
+
+  return [
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    ...baseStops.map((value, index) =>
+      index % 2 === 0 ? value : Math.min(value * opacityScale, 1),
+    ),
+  ];
+}
+
 function filterFeatureCollectionByOutcome(collection, outcome) {
   const features = (collection?.features ?? []).filter(
     (feature) => feature?.properties?.outcome === outcome,
@@ -261,9 +276,9 @@ function buildOrderedLayerIds({ is3d, layerVisibility, showExtentLayer }) {
 
   if (layerVisibility.differenceHeatmap) {
     orderedLayerIds.push(
-      DIFFERENCE_TRUE_POSITIVE_LAYER_ID,
       DIFFERENCE_FALSE_POSITIVE_LAYER_ID,
       DIFFERENCE_FALSE_NEGATIVE_LAYER_ID,
+      DIFFERENCE_TRUE_POSITIVE_LAYER_ID,
     );
   }
 
@@ -364,7 +379,15 @@ function createOverviewCircleLayer(selectedId) {
   };
 }
 
-function createHeatmapLayer({ id, gradient, filter, weightExpression = 1, mode = "2d", source }) {
+function createHeatmapLayer({
+  id,
+  gradient,
+  filter,
+  weightExpression = 1,
+  mode = "2d",
+  source,
+  opacityScale = 1,
+}) {
   const is3d = mode === "3d";
   const layer = {
     id,
@@ -378,9 +401,7 @@ function createHeatmapLayer({ id, gradient, filter, weightExpression = 1, mode =
       "heatmap-radius": is3d
         ? ["interpolate", ["linear"], ["zoom"], 0, 10, 4, 16, 8, 24, 12, 36]
         : ["interpolate", ["linear"], ["zoom"], 0, 8, 4, 14, 8, 22, 12, 34],
-      "heatmap-opacity": is3d
-        ? ["interpolate", ["linear"], ["zoom"], 0, 0.78, 8, 0.88, 12, 0.78, 16, 0.58]
-        : ["interpolate", ["linear"], ["zoom"], 0, 0.72, 8, 0.84, 12, 0.72, 16, 0.5],
+      "heatmap-opacity": buildHeatmapOpacityExpression(is3d, opacityScale),
       "heatmap-color": buildHeatmapColorExpression(gradient),
     },
   };
@@ -512,6 +533,7 @@ function MapLibreView({
   initialViewState,
   viewMode,
   mapProjection,
+  maxZoom,
   tileUrls,
   tileAttribution,
   tileMaxZoom,
@@ -605,6 +627,7 @@ function MapLibreView({
         projection={activeProjection}
         attributionControl
         interactiveLayerIds={interactiveLayerIds}
+        maxZoom={maxZoom}
         maxPitch={is3d ? 75 : 0}
         dragRotate={is3d}
         touchPitch={is3d}
@@ -639,6 +662,7 @@ function MapLibreView({
               {...createHeatmapLayer({
                 id: PREDICTION_HEAT_LAYER_ID,
                 gradient: PREDICTION_HEAT_GRADIENT,
+                opacityScale: 0.72,
                 weightExpression: [
                   "interpolate",
                   ["linear"],
@@ -667,6 +691,7 @@ function MapLibreView({
               {...createHeatmapLayer({
                 id: GROUND_TRUTH_HEAT_LAYER_ID,
                 gradient: GROUND_TRUTH_HEAT_GRADIENT,
+                opacityScale: 0.72,
                 mode: is3d ? "3d" : "2d",
                 source: "ground-truth-source",
               })}
@@ -676,20 +701,6 @@ function MapLibreView({
 
         {layerVisibility.differenceHeatmap ? (
           <>
-            <Source
-              id="difference-true-positive-source"
-              type="geojson"
-              data={truePositiveDifferenceData}
-            >
-              <Layer
-                {...createHeatmapLayer({
-                  id: DIFFERENCE_TRUE_POSITIVE_LAYER_ID,
-                  gradient: TRUE_POSITIVE_HEAT_GRADIENT,
-                  mode: is3d ? "3d" : "2d",
-                  source: "difference-true-positive-source",
-                })}
-              />
-            </Source>
             <Source
               id="difference-false-positive-source"
               type="geojson"
@@ -715,6 +726,20 @@ function MapLibreView({
                   gradient: FALSE_NEGATIVE_HEAT_GRADIENT,
                   mode: is3d ? "3d" : "2d",
                   source: "difference-false-negative-source",
+                })}
+              />
+            </Source>
+            <Source
+              id="difference-true-positive-source"
+              type="geojson"
+              data={truePositiveDifferenceData}
+            >
+              <Layer
+                {...createHeatmapLayer({
+                  id: DIFFERENCE_TRUE_POSITIVE_LAYER_ID,
+                  gradient: TRUE_POSITIVE_HEAT_GRADIENT,
+                  mode: is3d ? "3d" : "2d",
+                  source: "difference-true-positive-source",
                 })}
               />
             </Source>
@@ -771,6 +796,7 @@ export default function MapView({
   selectedFire,
   fireLayers,
   selectedFireLoading = false,
+  fireDetailMaxZoom,
   layerVisibility,
 }) {
   const selectedExtentData = buildSelectedExtentGeojson(selectedFire);
@@ -791,6 +817,7 @@ export default function MapView({
   const tileUrls = osmTileConfig.tiles;
   const tileAttribution = osmTileConfig.attribution;
   const tileMaxZoom = osmTileConfig.maxZoom;
+  const interactiveMaxZoom = selectedFire ? fireDetailMaxZoom : undefined;
   const predictionHeatmapData = fireLayers?.predictionHeatmap ?? EMPTY_FEATURE_COLLECTION;
   const groundTruthData = fireLayers?.groundTruthHeatmap ?? EMPTY_FEATURE_COLLECTION;
   const differenceData = fireLayers?.differenceHeatmap ?? EMPTY_FEATURE_COLLECTION;
@@ -804,6 +831,7 @@ export default function MapView({
       initialViewState={initialViewState}
       viewMode={viewMode}
       mapProjection={mapProjection}
+      maxZoom={interactiveMaxZoom}
       tileUrls={tileUrls}
       tileAttribution={tileAttribution}
       tileMaxZoom={tileMaxZoom}

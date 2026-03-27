@@ -203,15 +203,6 @@ export default function IncidentsPanel({
                   </div> */}
 
                   <div className="insight-card">
-                    <h3>Incident metadata</h3>
-                    <StatRow label="Fire ID" value={fire.fireId} />
-                    <StatRow label="Samples" value={fire.samples} />
-                    <StatRow label="Grid" value={`${fire.width} × ${fire.height}`} />
-                    <StatRow label="Observation window" value={formatDateRange(fire)} />
-                    <StatRow label="Current target" value={frame?.targetDate ?? "—"} />
-                  </div>
-
-                  <div className="insight-card">
                     <h3>Model summary</h3>
                     {timelineLoading && (
                       <StateCard
@@ -284,7 +275,7 @@ export default function IncidentsPanel({
                     )}
                   </div>
 
-                  <div className="insight-card incidents-panel-last-card">
+                  <div className="insight-card">
                     <h3>Confusion counts</h3>
                     {summary ? (
                       <>
@@ -300,6 +291,30 @@ export default function IncidentsPanel({
                         copy="Confusion totals appear after a frame summary has been loaded."
                       />
                     )}
+                  </div>
+
+                  <div className="insight-card incident-metadata-card incidents-panel-last-card">
+                    <h3>Incident metadata</h3>
+                    <div className="incident-meta-grid">
+                      <div className="incident-id-tile">
+                        <span>Fire ID</span>
+                        <strong>{fire.fireId}</strong>
+                      </div>
+
+                      <MetricTile label="Samples" value={fire.samples} />
+                      <MetricTile label="Grid" value={`${fire.width} × ${fire.height}`} />
+                    </div>
+
+                    <div className="incident-date-band">
+                      <div className="incident-date-row">
+                        <span>Observation window</span>
+                        <strong>{formatDateRange(fire)}</strong>
+                      </div>
+                      <div className="incident-date-row">
+                        <span>Current target</span>
+                        <strong>{frame?.targetDate ?? "—"}</strong>
+                      </div>
+                    </div>
                   </div>
                 </>
               ) : (
