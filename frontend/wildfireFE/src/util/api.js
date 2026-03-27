@@ -33,6 +33,10 @@ async function fetchYears({ signal } = {}) {
   return fetchJson(buildUrl("/years"), { signal });
 }
 
+async function fetchGoodPredictions({ year, signal }) {
+  return fetchJson(buildUrl("/good-predictions", { year }), { signal });
+}
+
 async function fetchTimeline({ fireId, year, signal }) {
   return fetchJson(buildUrl(`/fires/${fireId}/timeline`, { year }), { signal });
 }
@@ -63,6 +67,7 @@ async function fetchLayers({
 
 export {
   API_BASE_URL,
+  fetchGoodPredictions,
   GRAPHQL_URL,
   fetchJson,
   fetchLayers,
