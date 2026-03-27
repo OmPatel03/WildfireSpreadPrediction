@@ -36,6 +36,10 @@ Environment variables (optional overrides):
 | `WILDFIRE_N_LEADS` | `1` | Number of leading observations to feed into the model per prediction. |
 | `WILDFIRE_PROB_THRESHOLD` | `0.5` | Default probability cutoff when converting model logits to a binary mask. |
 | `WILDFIRE_DEVICE` | auto-detect | Set to `cpu`, `cuda`, etc. to pin inference to a specific device. |
+| `WILDFIRE_INFER_MAX_CONCURRENCY` | `3` | Maximum concurrent inference requests handled by the backend app. |
+| `WILDFIRE_INFER_QUEUE_TIMEOUT_SECONDS` | `0.35` | Queue wait timeout before backend rejects inference with `429`. |
+| `WILDFIRE_CACHE_TTL_SECONDS` | `600` | TTL for cached inference probability rasters. |
+| `WILDFIRE_CACHE_MAX_ENTRIES` | `300` | Maximum in-memory inference cache entries (LRU eviction). |
 
 ### REST endpoints
 
@@ -54,6 +58,14 @@ Environment variables (optional overrides):
   * Centroid coordinates from the HDF5 attributes (`lnglat`) so the client can place the feature on a basemap.
   * The predicted probability raster and binary mask for the requested sample window.
   * Basic summary stats (mean/max probabilities, positive pixel counts, etc.).
+  * Under high load, this endpoint and `/fires/{fire_id}/layers` may return `429 Too Many Requests`.
+
+### DDoS / malicious traffic controls
+
+The deployment uses layered protections:
+* Cloudflare edge protections (rate limit + continuous monitoring).
+* Nginx route-level request throttling with `429` fallback.
+* Backend concurrency guard and fail-fast queue timeout for inference endpoints.
 
 ### GraphQL endpoint
 

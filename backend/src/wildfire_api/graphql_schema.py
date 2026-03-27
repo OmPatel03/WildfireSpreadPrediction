@@ -18,6 +18,11 @@ class HealthType:
     device: str
     hdf5_root: str
     default_year: int
+    infer_max_concurrency: int
+    infer_queue_timeout_seconds: float
+    cache_ttl_seconds: int
+    cache_max_entries: int
+    metrics: JSON
 
 
 @strawberry.type
