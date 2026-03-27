@@ -2,6 +2,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import maplibregl from "maplibre-gl";
 import { useEffect, useMemo, useState } from "react";
 import Map, { Layer, Source } from "react-map-gl/maplibre";
+import "./MapView.css";
 
 const OSM_STANDARD_BASEMAP_TILES = [
   "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -211,18 +212,6 @@ function buildProbabilityColorExpression() {
   ];
 }
 
-function buildProbabilityOpacityExpression(minOpacity, maxOpacity) {
-  return [
-    "interpolate",
-    ["linear"],
-    ["coalesce", ["to-number", ["get", "probability"]], 0],
-    0,
-    minOpacity,
-    1,
-    maxOpacity,
-  ];
-}
-
 function buildHeatmapColorExpression(gradient) {
   const expression = ["interpolate", ["linear"], ["heatmap-density"], 0, "rgba(2, 6, 23, 0)"];
   const stops = Object.entries(gradient)
@@ -423,35 +412,6 @@ function createPredictionExtrusionLayer() {
       "fill-extrusion-height": ["coalesce", ["to-number", ["get", "height"]], 0],
       "fill-extrusion-base": 0,
       "fill-extrusion-opacity": 0.78,
-    },
-  };
-}
-
-function createPredictionPolygonFillLayer() {
-  return {
-    id: PREDICTION_POLYGON_FILL_LAYER_ID,
-    type: "fill",
-    source: "prediction-polygon-source",
-    paint: {
-      "fill-color": buildProbabilityColorExpression(),
-      "fill-opacity": buildProbabilityOpacityExpression(0.15, 0.7),
-    },
-  };
-}
-
-function createPredictionPolygonOutlineLayer() {
-  return {
-    id: PREDICTION_POLYGON_OUTLINE_LAYER_ID,
-    type: "line",
-    source: "prediction-polygon-source",
-    paint: {
-      "line-color": "#f97316",
-      "line-width": 1,
-      "line-opacity": 0.82,
-    },
-    layout: {
-      "line-join": "round",
-      "line-cap": "round",
     },
   };
 }

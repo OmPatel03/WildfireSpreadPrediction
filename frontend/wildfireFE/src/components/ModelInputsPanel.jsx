@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import "./ModelInputsPanel.css";
 
 const INPUT_ORDER = [
   "viirs_m11",

@@ -100,8 +100,6 @@ function computeMetrics(mask, groundTruth) {
   let falseNegative = 0;
   let trueNegative = 0;
 
-  const radius = 2; // consider neighboring pixels within this radius
-
   for (let i = 0; i < mask.length; i++) {
     const maskRow = mask[i] || [];
     const gtRow = groundTruth[i] || [];

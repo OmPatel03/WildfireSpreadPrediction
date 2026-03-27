@@ -1,3 +1,5 @@
+import "./IncidentsPanel.css";
+
 function describeFire(fire) {
   if (fire?.locationName) return fire.locationName;
   if (
@@ -191,17 +193,6 @@ export default function IncidentsPanel({
             <div className="incidents-panel-pane incidents-panel-pane-detail">
               {fire ? (
                 <>
-                  {/* <div className="insight-hero">
-                    <div>
-                      <p className="eyebrow">Current focus</p>
-                      <h3>{fire.locationName ?? fire.fireId}</h3>
-                    </div>
-                    <div className="insight-hero-meta">
-                      <span className="panel-meta-pill">Frame {frame?.label ?? "Pending"}</span>
-                      <span className="panel-meta-pill">{frame?.targetDate ?? "No target date"}</span>
-                    </div>
-                  </div> */}
-
                   <div className="insight-card">
                     <h3>Model summary</h3>
                     {timelineLoading && (

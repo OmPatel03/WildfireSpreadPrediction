@@ -1,20 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import "./App.css";
-import FilterBar from "./components/FilterBar";
+import "./styles/app-shell.css";
 import EnvironmentPanel from "./components/EnvironmentPanel";
 import IncidentsPanel from "./components/IncidentsPanel";
+import MapAtmosphere from "./components/MapAtmosphere";
 import MapHud from "./components/MapHud";
 import MapView from "./components/MapView";
 import ModelInputsPanel from "./components/ModelInputsPanel";
 import TimelineDock from "./components/TimelineDock";
-import {
-  fetchGoodPredictions,
-  fetchLayers,
-  fetchOverview,
-  fetchTimeline,
-  fetchYears,
-} from "./util/api.js";
-import { annotateCatalogWithLocations } from "./util/geocode.js";
+import TopControls from "./components/TopControls";
+import useAvailableYears from "./hooks/useAvailableYears";
+import useCatalogData from "./hooks/useCatalogData";
+import useDebouncedValue from "./hooks/useDebouncedValue";
+import useFireLayers from "./hooks/useFireLayers";
+import useFireTimeline from "./hooks/useFireTimeline";
+import useMapCamera from "./hooks/useMapCamera";
 
 const DEFAULT_YEAR = 2021;
 const DEFAULT_THRESHOLD = 0.9;
@@ -25,7 +24,6 @@ const THREE_D_PITCH = 55;
 const DEFAULT_OSM_MAP_STYLE = "terrain";
 const DEFAULT_OSM_PROJECTION = "mercator";
 const FIRE_DETAIL_MAX_ZOOM = 12;
-const FIRE_LOADING_EXTENT_MAX_ZOOM = 8.3;
 const INITIAL_VIEW = {
   longitude: -100,
   latitude: 40,
@@ -57,22 +55,6 @@ const DEFAULT_LAYER_VISIBILITY = {
   origin: true,
 };
 
-function useDebouncedValue(value, delayMs) {
-  const [debouncedValue, setDebouncedValue] = useState(value);
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      setDebouncedValue(value);
-    }, delayMs);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [delayMs, value]);
-
-  return debouncedValue;
-}
-
 function buildOverviewGeojson(fires) {
   return {
     type: "FeatureCollection",
@@ -99,11 +81,8 @@ function buildOverviewGeojson(fires) {
 
 export default function App() {
   const mapRef = useRef(null);
-  const timelineCacheRef = useRef(new Map());
-  const layersCacheRef = useRef(new Map());
 
   const [year, setYear] = useState(DEFAULT_YEAR);
-  const [yearOptions, setYearOptions] = useState(FALLBACK_YEAR_OPTIONS);
   const [threshold, setThreshold] = useState(DEFAULT_THRESHOLD);
   const [catalogLimit, setCatalogLimit] = useState(DEFAULT_CATALOG_LIMIT);
   const [searchTerm, setSearchTerm] = useState("");
@@ -123,157 +102,63 @@ export default function App() {
   const [layerVisibility, setLayerVisibility] = useState(
     DEFAULT_LAYER_VISIBILITY,
   );
-
-  const [catalog, setCatalog] = useState([]);
-  const [catalogLoading, setCatalogLoading] = useState(false);
-  const [catalogError, setCatalogError] = useState(null);
-
-  const [timeline, setTimeline] = useState(null);
-  const [timelineLoading, setTimelineLoading] = useState(false);
-  const [timelineError, setTimelineError] = useState(null);
-
-  const [layersResponse, setLayersResponse] = useState(null);
-  const [layersLoading, setLayersLoading] = useState(false);
-  const [layersError, setLayersError] = useState(null);
   const [selectedFireLoadingId, setSelectedFireLoadingId] = useState(null);
+
+  const {
+    yearOptions,
+    resolvedInitialYear,
+  } = useAvailableYears({
+    defaultYear: DEFAULT_YEAR,
+    fallbackYearOptions: FALLBACK_YEAR_OPTIONS,
+  });
+  const {
+    catalog,
+    loading: catalogLoading,
+    error: catalogError,
+  } = useCatalogData({
+    year,
+    catalogLimit,
+    mapboxToken: MAPBOX_TOKEN,
+  });
 
   const debouncedThreshold = useDebouncedValue(threshold, 350);
   const debouncedSampleIndex = useDebouncedValue(sampleIndex, 200);
   const debouncedEnvironmentScales = useDebouncedValue(environmentScales, 300);
+
+  useEffect(() => {
+    if (resolvedInitialYear === null || resolvedInitialYear === undefined) {
+      return;
+    }
+
+    setYear((currentYear) =>
+      yearOptions.includes(currentYear) ? currentYear : resolvedInitialYear,
+    );
+  }, [resolvedInitialYear, yearOptions]);
 
   const handleYearChange = (nextYear) => {
     if (nextYear === year) {
       return;
     }
 
-    setCatalog([]);
-    setCatalogError(null);
+    setCatalogPage(0);
     setSelectedId(null);
-    setTimeline(null);
-    setTimelineLoading(false);
     setSampleIndex(null);
-    setTimelineError(null);
-    setLayersResponse(null);
-    setLayersLoading(false);
-    setLayersError(null);
     setSelectedFireLoadingId(null);
     setIncidentsView("catalog");
     setYear(nextYear);
   };
 
   useEffect(() => {
-    let ignore = false;
-    const controller = new AbortController();
-
-    async function loadYears() {
-      try {
-        const years = await fetchYears({ signal: controller.signal });
-        if (ignore || !Array.isArray(years) || years.length === 0) return;
-        setYearOptions(years);
-        setYear((currentYear) =>
-          years.includes(currentYear) ? currentYear : years[years.length - 1],
-        );
-      } catch (error) {
-        if (!ignore && error?.name !== "AbortError") {
-          console.warn("Unable to load available years:", error);
-        }
-      }
+    if (!selectedId) {
+      return;
     }
 
-    loadYears();
-    return () => {
-      ignore = true;
-      controller.abort();
-    };
-  }, []);
-
-  useEffect(() => {
-    let ignore = false;
-    const geocodeController = new AbortController();
-    const overviewController = new AbortController();
-
-    async function loadOverview() {
-      setCatalogLoading(true);
-      setCatalogError(null);
-
-      try {
-        const overviewLimit = year === 2021 ? 1000 : catalogLimit;
-        const rows = await fetchOverview({
-          year,
-          limit: overviewLimit,
-          offset: 0,
-          signal: overviewController.signal,
-        });
-        let filteredRows = rows;
-
-        if (year === 2021) {
-          try {
-            const goodPredictions = await fetchGoodPredictions({
-              year,
-              signal: overviewController.signal,
-            });
-            const allowedFireIds = new Set(
-              goodPredictions
-                .map((entry) => entry.fireId)
-                .filter(Boolean),
-            );
-            filteredRows = rows.filter((fire) => allowedFireIds.has(fire.fireId));
-          } catch (error) {
-            if (error?.name === "AbortError") {
-              throw error;
-            }
-            console.warn("Unable to load good-prediction whitelist for 2021:", error);
-          }
-        }
-
-        if (year === 2021) {
-          filteredRows = filteredRows.slice(0, catalogLimit);
-        }
-
-        if (!ignore) {
-          setCatalog(filteredRows);
-          setCatalogPage(0);
-          setSelectedId((currentId) =>
-            currentId && !filteredRows.some((fire) => fire.fireId === currentId)
-              ? null
-              : currentId,
-          );
-        }
-
-        try {
-          const enriched = await annotateCatalogWithLocations(
-            filteredRows,
-            MAPBOX_TOKEN,
-            geocodeController.signal,
-          );
-
-          if (!ignore) {
-            setCatalog(enriched);
-          }
-        } catch (error) {
-          if (error?.name !== "AbortError") {
-            console.warn("Location lookup failed:", error);
-          }
-        }
-      } catch (error) {
-        if (!ignore && error?.name !== "AbortError") {
-          setCatalogError(error.message ?? "Unable to load overview");
-          setCatalog([]);
-        }
-      } finally {
-        if (!ignore) {
-          setCatalogLoading(false);
-        }
-      }
+    if (!catalog.some((fire) => fire.fireId === selectedId)) {
+      setSelectedId(null);
+      setSampleIndex(null);
+      setSelectedFireLoadingId(null);
     }
-
-    loadOverview();
-    return () => {
-      ignore = true;
-      overviewController.abort();
-      geocodeController.abort();
-    };
-  }, [catalogLimit, year]);
+  }, [catalog, selectedId]);
 
   const filteredCatalog = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -327,67 +212,60 @@ export default function App() {
     [filteredCatalog],
   );
 
+  const {
+    timeline,
+    loading: timelineLoading,
+    error: timelineError,
+  } = useFireTimeline({
+    fireId: selectedId,
+    year,
+    enabled: Boolean(selectedId && selectedFireYear === year),
+  });
+
   useEffect(() => {
     if (!selectedId || selectedFireYear !== year) {
-      setTimeline(null);
-      setTimelineLoading(false);
       setSampleIndex(null);
-      setTimelineError(null);
       setSelectedFireLoadingId(null);
       return;
     }
 
-    setTimeline(null);
-    setSampleIndex(null);
-    setTimelineError(null);
-
-    let ignore = false;
-    const controller = new AbortController();
-
-    async function loadTimeline() {
-      setTimelineLoading(true);
-      setTimelineError(null);
-
-      try {
-        const timelineCacheKey = `${year}:${selectedId}`;
-        const payload = timelineCacheRef.current.get(timelineCacheKey)
-          ?? await fetchTimeline({
-            fireId: selectedId,
-            year,
-            signal: controller.signal,
-          });
-        timelineCacheRef.current.set(timelineCacheKey, payload);
-        if (ignore) return;
-        setTimeline(payload);
-        setSampleIndex((current) => {
-          const frameIndices = payload.frames?.map((frame) => frame.sampleIndex) ?? [];
-          if (
-            Number.isInteger(current) &&
-            frameIndices.includes(current)
-          ) {
-            return current;
-          }
-          return payload.defaultSampleIndex ?? 0;
-        });
-      } catch (error) {
-        if (!ignore && error?.name !== "AbortError") {
-          setTimeline(null);
-          setSampleIndex(null);
-          setTimelineError(error.message ?? "Unable to load timeline");
-        }
-      } finally {
-        if (!ignore) {
-          setTimelineLoading(false);
-        }
-      }
+    if (!timeline) {
+      return;
     }
 
-    loadTimeline();
-    return () => {
-      ignore = true;
-      controller.abort();
-    };
-  }, [selectedFireYear, selectedId, year]);
+    setSampleIndex((current) => {
+      const frameIndices = timeline.frames?.map((frame) => frame.sampleIndex) ?? [];
+      if (Number.isInteger(current) && frameIndices.includes(current)) {
+        return current;
+      }
+      return timeline.defaultSampleIndex ?? 0;
+    });
+  }, [selectedFireYear, selectedId, timeline, year]);
+
+  const {
+    layersResponse,
+    loading: layersLoading,
+    error: layersError,
+  } = useFireLayers({
+    fireId: selectedId,
+    year,
+    sampleIndex: debouncedSampleIndex,
+    threshold: debouncedThreshold,
+    environmentScales: debouncedEnvironmentScales,
+    enabled: Boolean(
+      selectedId
+        && selectedFireYear === year
+        && debouncedSampleIndex !== null
+        && debouncedSampleIndex !== undefined,
+    ),
+  });
+
+  useMapCamera({
+    mapRef,
+    selectedFire,
+    layersResponse,
+    viewMode,
+  });
 
   useEffect(() => {
     if (!selectedId) {
@@ -395,207 +273,24 @@ export default function App() {
       return;
     }
 
-    if (layersResponse || layersError || timelineError) {
+    if (timelineError || layersError) {
+      setSelectedFireLoadingId((current) =>
+        current === selectedId ? null : current,
+      );
+      return;
+    }
+
+    if (
+      layersResponse?.fire?.fireId === selectedId
+      && sampleIndex !== null
+      && sampleIndex !== undefined
+      && layersResponse.sampleIndex === sampleIndex
+    ) {
       setSelectedFireLoadingId((current) =>
         current === selectedId ? null : current,
       );
     }
-  }, [layersError, layersResponse, selectedId, timelineError]);
-
-  useEffect(() => {
-    if (
-      !selectedId ||
-      selectedFireYear !== year ||
-      sampleIndex === null ||
-      sampleIndex === undefined
-    ) {
-      setLayersResponse(null);
-      setLayersLoading(false);
-      setLayersError(null);
-      return;
-    }
-
-    if (
-      debouncedSampleIndex === null ||
-      debouncedSampleIndex === undefined ||
-      debouncedSampleIndex !== sampleIndex
-    ) {
-      return;
-    }
-
-    let ignore = false;
-    const controller = new AbortController();
-
-    async function loadLayers() {
-      setLayersLoading(true);
-      setLayersError(null);
-
-      try {
-        const layerCacheKey = [
-          year,
-          selectedId,
-          debouncedSampleIndex,
-          debouncedThreshold,
-          JSON.stringify(debouncedEnvironmentScales),
-        ].join(":");
-        const payload = layersCacheRef.current.get(layerCacheKey)
-          ?? await fetchLayers({
-            fireId: selectedId,
-            year,
-            sampleIndex: debouncedSampleIndex,
-            threshold: debouncedThreshold,
-            environmentScales: debouncedEnvironmentScales,
-            signal: controller.signal,
-          });
-        layersCacheRef.current.set(layerCacheKey, payload);
-        if (ignore) return;
-        setLayersResponse(payload);
-      } catch (error) {
-        if (!ignore && error?.name !== "AbortError") {
-          setLayersResponse(null);
-          setLayersError(error.message ?? "Unable to load fire layers");
-        }
-      } finally {
-        if (!ignore) {
-          setLayersLoading(false);
-        }
-      }
-    }
-
-    loadLayers();
-    return () => {
-      ignore = true;
-      controller.abort();
-    };
-  }, [
-    debouncedEnvironmentScales,
-    debouncedSampleIndex,
-    debouncedThreshold,
-    sampleIndex,
-    selectedFireYear,
-    selectedId,
-    year,
-  ]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    const horizontalPadding = Math.min(
-      Math.max(Math.round(window.innerWidth * 0.16), 140),
-      240,
-    );
-    const topPadding = Math.min(
-      Math.max(Math.round(window.innerHeight * 0.1), 64),
-      110,
-    );
-    const bottomOverlayPadding = window.innerWidth <= 1100 ? 86 : 108;
-    const cameraOptions = viewMode === "3d"
-      ? {
-          bearing: THREE_D_BEARING,
-          pitch: THREE_D_PITCH,
-        }
-      : {
-          bearing: 0,
-          pitch: 0,
-        };
-    const fitPadding = {
-      top: topPadding,
-      right: horizontalPadding,
-      bottom: bottomOverlayPadding,
-      left: horizontalPadding,
-    };
-
-    if (!selectedFire) {
-      map.resize?.();
-      map.easeTo?.({
-        center: [INITIAL_VIEW.longitude, INITIAL_VIEW.latitude],
-        zoom: INITIAL_VIEW.zoom,
-        duration: 900,
-        ...cameraOptions,
-      });
-      return;
-    }
-
-    const bbox = selectedFire.bbox;
-    const activeLayers = layersResponse?.layers ?? null;
-
-    map.resize?.();
-
-    const candidateFeatures = [
-      ...(activeLayers?.predictionHeatmap?.features ?? []),
-      ...(activeLayers?.groundTruthHeatmap?.features ?? []),
-    ];
-
-    if (candidateFeatures.length > 0) {
-      let minLat = Infinity;
-      let minLon = Infinity;
-      let maxLat = -Infinity;
-      let maxLon = -Infinity;
-
-      candidateFeatures.forEach((feature) => {
-        const [lon, lat] = feature?.geometry?.coordinates ?? [];
-        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
-        minLat = Math.min(minLat, lat);
-        minLon = Math.min(minLon, lon);
-        maxLat = Math.max(maxLat, lat);
-        maxLon = Math.max(maxLon, lon);
-      });
-
-      if (
-        Number.isFinite(minLat) &&
-        Number.isFinite(minLon) &&
-        Number.isFinite(maxLat) &&
-        Number.isFinite(maxLon)
-      ) {
-        const latPad = Math.max((maxLat - minLat) * 0.35, 0.01);
-        const lonPad = Math.max((maxLon - minLon) * 0.35, 0.01);
-
-        map.fitBounds(
-          [
-            [minLon - lonPad, minLat - latPad],
-            [maxLon + lonPad, maxLat + latPad],
-          ],
-          {
-            padding: fitPadding,
-            maxZoom: FIRE_DETAIL_MAX_ZOOM,
-            duration: viewMode === "3d" ? 1000 : 850,
-            ...cameraOptions,
-          },
-        );
-        return;
-      }
-    }
-
-    if (
-      bbox &&
-      Number.isFinite(bbox.minLon) &&
-      Number.isFinite(bbox.minLat) &&
-      Number.isFinite(bbox.maxLon) &&
-      Number.isFinite(bbox.maxLat)
-    ) {
-      map.fitBounds(
-        [
-          [bbox.minLon, bbox.minLat],
-          [bbox.maxLon, bbox.maxLat],
-        ],
-        {
-          padding: fitPadding,
-          maxZoom: FIRE_LOADING_EXTENT_MAX_ZOOM,
-          duration: viewMode === "3d" ? 1000 : 850,
-          ...cameraOptions,
-        },
-      );
-      return;
-    }
-
-    map.flyTo({
-      center: [selectedFire.longitude, selectedFire.latitude],
-      zoom: Math.min(8.2, FIRE_DETAIL_MAX_ZOOM),
-      duration: viewMode === "3d" ? 1000 : 850,
-      ...cameraOptions,
-    });
-  }, [layersResponse, selectedFire, viewMode]);
+  }, [layersError, layersResponse, sampleIndex, selectedId, timelineError]);
 
   const currentFrame = useMemo(() => {
     if (!timeline?.frames?.length || sampleIndex === null || sampleIndex === undefined) {
@@ -630,10 +325,6 @@ export default function App() {
     setSelectedId(fireId);
     setIncidentsView("detail");
     setSampleIndex(null);
-    setTimeline(null);
-    setTimelineError(null);
-    setLayersResponse(null);
-    setLayersError(null);
   };
 
   const handleEnvironmentScaleChange = (key, value) => {
@@ -661,6 +352,7 @@ export default function App() {
     setSampleIndex(null);
     setIncidentsView("catalog");
     setOsmMapStyle(DEFAULT_OSM_MAP_STYLE);
+    setOsmProjection(DEFAULT_OSM_PROJECTION);
     setModelInputsOpen(false);
     setEnvironmentOpen(false);
     setCollapsedPanels({
@@ -668,12 +360,6 @@ export default function App() {
     });
     setEnvironmentScales(DEFAULT_ENVIRONMENT_SCALES);
     setLayerVisibility(DEFAULT_LAYER_VISIBILITY);
-    setTimeline(null);
-    setTimelineLoading(false);
-    setTimelineError(null);
-    setLayersResponse(null);
-    setLayersLoading(false);
-    setLayersError(null);
     setSelectedFireLoadingId(null);
   };
 
@@ -684,28 +370,17 @@ export default function App() {
     }));
   };
 
-  const handleOpenModelInputs = () => {
-    setModelInputsOpen((open) => !open);
-  };
-
-  const handleOpenEnvironment = () => {
-    setEnvironmentOpen((open) => !open);
-  };
-
   const beginFrameTransition = (nextSampleIndex) => {
     if (
-      !selectedId ||
-      nextSampleIndex === null ||
-      nextSampleIndex === undefined ||
-      nextSampleIndex === sampleIndex
+      !selectedId
+      || nextSampleIndex === null
+      || nextSampleIndex === undefined
+      || nextSampleIndex === sampleIndex
     ) {
       return;
     }
 
     setSelectedFireLoadingId(selectedId);
-    setLayersLoading(true);
-    setLayersResponse(null);
-    setLayersError(null);
     setSampleIndex(nextSampleIndex);
   };
 
@@ -756,119 +431,38 @@ export default function App() {
         fireDetailMaxZoom={FIRE_DETAIL_MAX_ZOOM}
         layerVisibility={layerVisibility}
       />
-      <div className="map-atmosphere" aria-hidden="true">
-        <div className="map-glow map-glow-left" />
-        <div className="map-glow map-glow-right" />
-        <div className="map-vignette" />
-      </div>
+
+      <MapAtmosphere />
 
       <MapHud
         selectedFire={selectedFire}
-        currentFrame={currentFrame}
         layerVisibility={layerVisibility}
-        layersLoading={layersLoading}
-        layersError={layersError}
-        timelineLoading={timelineLoading}
       />
 
-      <div className="top-controls-layout app-overlay">
-        <FilterBar
-          year={year}
-          yearOptions={yearOptions}
-          onYearChange={handleYearChange}
-          threshold={threshold}
-          onThresholdChange={setThreshold}
-          catalogLimit={catalogLimit}
-          onCatalogLimitChange={setCatalogLimit}
-          osmMapStyle={osmMapStyle}
-          osmMapStyles={OSM_MAP_STYLES}
-          onOsmMapStyleChange={setOsmMapStyle}
-          viewMode={viewMode}
-          layerVisibility={layerVisibility}
-          onToggleLayer={handleToggleLayer}
-        />
-
-        <div className="control-actions-stack">
-          <div className="toolbar-actions">
-            <button
-              type="button"
-              className="control-button control-button-reset"
-              onClick={handleResetApp}
-              disabled={!selectedFire}
-            >
-              Reset view
-            </button>
-
-            <button
-              type="button"
-              className={(modelInputsOpen ? "control-button active" : "control-button") + " tooltip-anchor"}
-              data-tooltip="Open the panel with the model features for the selected frame."
-              onClick={handleOpenModelInputs}
-            >
-              Model inputs
-            </button>
-
-            <button
-              type="button"
-              className={(environmentOpen ? "control-button active" : "control-button") + " tooltip-anchor"}
-              data-tooltip="Open controls for adjusting environmental factors."
-              onClick={handleOpenEnvironment}
-            >
-              Environment
-            </button>
-
-            <div
-              className="segmented-control"
-              style={{ "--active-segment-index": viewMode === "3d" ? 1 : 0 }}
-            >
-              <button
-                type="button"
-                className={"tooltip-anchor" + (viewMode === "2d" ? " active" : "")}
-                data-tooltip="Use the standard top-down map."
-                onClick={() => setViewMode("2d")}
-              >
-                2D
-              </button>
-              <button
-                type="button"
-                className={"tooltip-anchor" + (viewMode === "3d" ? " active" : "")}
-                data-tooltip="Use the pitched 3D map."
-                onClick={() => setViewMode("3d")}
-              >
-                3D
-              </button>
-            </div>
-
-            {viewMode === "3d" ? (
-              <div className="action-stack-segment-group">
-                <div
-                  className="segmented-control"
-                  role="group"
-                  aria-label="OSM 3D projection"
-                  style={{ "--active-segment-index": osmProjection === "globe" ? 1 : 0 }}
-                >
-                  <button
-                    type="button"
-                    className={"tooltip-anchor" + (osmProjection === "mercator" ? " active" : "")}
-                    data-tooltip="Show the 3D map in the standard flat mercator projection."
-                    onClick={() => setOsmProjection("mercator")}
-                  >
-                    Flat
-                  </button>
-                  <button
-                    type="button"
-                    className={"tooltip-anchor tooltip-align-right" + (osmProjection === "globe" ? " active" : "")}
-                    data-tooltip="Wrap the 3D map onto a globe projection."
-                    onClick={() => setOsmProjection("globe")}
-                  >
-                    Globe
-                  </button>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
+      <TopControls
+        year={year}
+        yearOptions={yearOptions}
+        onYearChange={handleYearChange}
+        threshold={threshold}
+        onThresholdChange={setThreshold}
+        catalogLimit={catalogLimit}
+        onCatalogLimitChange={setCatalogLimit}
+        osmMapStyle={osmMapStyle}
+        osmMapStyles={OSM_MAP_STYLES}
+        onOsmMapStyleChange={setOsmMapStyle}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        osmProjection={osmProjection}
+        onOsmProjectionChange={setOsmProjection}
+        layerVisibility={layerVisibility}
+        onToggleLayer={handleToggleLayer}
+        selectedFire={selectedFire}
+        onResetApp={handleResetApp}
+        modelInputsOpen={modelInputsOpen}
+        onToggleModelInputs={() => setModelInputsOpen((open) => !open)}
+        environmentOpen={environmentOpen}
+        onToggleEnvironment={() => setEnvironmentOpen((open) => !open)}
+      />
 
       <ModelInputsPanel
         isOpen={modelInputsOpen}
@@ -927,7 +521,6 @@ export default function App() {
           error={timelineError}
         />
       ) : null}
-
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import "./EnvironmentPanel.css";
+
 const SCALE_KEYS = [
   { key: "viirs_m11", label: "VIIRS M11" },
   { key: "viirs_i2", label: "VIIRS I2" },

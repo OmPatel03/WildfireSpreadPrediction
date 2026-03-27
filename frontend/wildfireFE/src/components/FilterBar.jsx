@@ -1,3 +1,5 @@
+import "./FilterBar.css";
+
 const LAYER_OPTIONS = [
   { key: "overview", label: "Overview" },
   { key: "predictionHeatmap", label: "Prediction" },
@@ -45,14 +47,7 @@ export default function FilterBar({
       <div className="top-bar-header">
         <div className="top-bar-title">
           <p className="eyebrow">Control deck</p>
-          {/* <h1>Wildfire spread explorer</h1> */}
         </div>
-
-        {/* <div className="top-bar-summary">
-          <span className="summary-chip">Year {year}</span>
-          <span className="summary-chip">Threshold {threshold.toFixed(2)}</span>
-          <span className="summary-chip">{catalogLimit} incidents</span>
-        </div> */}
       </div>
 
       <div className="top-bar-main">
