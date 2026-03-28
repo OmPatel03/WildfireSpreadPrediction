@@ -20,7 +20,7 @@ from pytorch_lightning.utilities import rank_zero_only
 import torch
 from dataloader.FireSpreadDataModule import FireSpreadDataModule
 from pytorch_lightning.cli import LightningCLI
-from models import SMPModel, BaseModel, ConvLSTMLightning, LogisticRegression  # noqa
+from models import SMPModel, SMPTempModel, BaseModel, ConvLSTMLightning, LogisticRegression, PersistenceModel  # noqa
 from models import BaseModel
 import wandb
 import os
@@ -52,6 +52,8 @@ class MyLightningCLI(LightningCLI):
                             help="Path to checkpoint whose model weights should be loaded before training without resuming trainer state.")
         parser.add_argument("--metrics_output_path", type=str, default=None,
                     help="Optional JSON output path for test metrics.")
+        parser.add_argument("--pr_curve_output_path", type=str, default=None,
+                    help="Optional JSON output path for test precision-recall curve arrays.")
                             
     def before_instantiate_classes(self):
         # jsonargparse may hand us list-like objects here; normalize once so feature
@@ -186,6 +188,18 @@ def main():
                 os.makedirs(os.path.dirname(cli.config.metrics_output_path), exist_ok=True)
                 with open(cli.config.metrics_output_path, "w") as f:
                     json.dump(test_results[0], f, indent=2)
+            if (
+                cli.config.pr_curve_output_path is not None
+                and getattr(cli.model, "latest_test_pr_curve", None) is not None
+            ):
+                os.makedirs(os.path.dirname(cli.config.pr_curve_output_path), exist_ok=True)
+                payload = {
+                    "metrics": test_results[0],
+                    "pr_curve": cli.model.latest_test_pr_curve,
+                    "confusion_matrix": getattr(cli.model, "latest_test_conf_mat", None),
+                }
+                with open(cli.config.pr_curve_output_path, "w") as f:
+                    json.dump(payload, f, indent=2)
 
     if cli.config.do_predict:
 

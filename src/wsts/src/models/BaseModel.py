@@ -54,6 +54,15 @@ class BaseModel(pl.LightningModule, ABC):
         """
         super().__init__(*args, **kwargs)
         self.save_hyperparameters()
+        # Some older/simple model configs rely on subclass defaults (for example
+        # UTAE forcing use_doy=True) that are not always preserved in
+        # self.hparams by the current Lightning/jsonargparse stack. Mirror the
+        # explicit constructor values back into hparams so validation/test code
+        # can safely access them across all model families.
+        if not hasattr(self.hparams, "use_doy"):
+            self.hparams.use_doy = use_doy
+        if not hasattr(self.hparams, "required_img_size"):
+            self.hparams.required_img_size = required_img_size
 
         if required_img_size is not None:
             self.hparams.required_img_size = torch.Size(
@@ -84,6 +93,8 @@ class BaseModel(pl.LightningModule, ABC):
 
         # Plot PR curve at the end of training. Use fixed number of threshold to avoid the plot becoming 800MB+. 
         self.test_pr_curve = torchmetrics.PrecisionRecallCurve("binary", thresholds=100)
+        self.latest_test_pr_curve = None
+        self.latest_test_conf_mat = None
 
     def forward(self, x, doys=None):
         # If doys are used, the model needs to re-implement the forward method
@@ -321,6 +332,13 @@ class BaseModel(pl.LightningModule, ABC):
         """_summary_ Log the test PR curve and confusion matrix after predicting all test samples.
         """
         conf_mat = self.conf_mat.compute().cpu().numpy()
+        self.latest_test_conf_mat = conf_mat.tolist()
+        precision, recall, thresholds = self.test_pr_curve.compute()
+        self.latest_test_pr_curve = {
+            "precision": precision.detach().cpu().tolist(),
+            "recall": recall.detach().cpu().tolist(),
+            "thresholds": thresholds.detach().cpu().tolist(),
+        }
         wandb_table = wandb.Table(
             data=conf_mat, columns=["PredictedBackground", "PredictedFire"]
         )

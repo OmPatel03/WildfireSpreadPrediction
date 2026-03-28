@@ -26,7 +26,9 @@ class SMPModel(BaseModel):
             *args,
             **kwargs
         )
-        self.save_hyperparameters()
+        # Preserve BaseModel's normalized focal alpha instead of writing the raw
+        # pos_class_weight back into hparams.
+        self.save_hyperparameters("encoder_name")
 
         self.model = smp.Unet(
             encoder_name=encoder_name,  # choose encoder, e.g. mobilenet_v2 or efficientnet-b7
