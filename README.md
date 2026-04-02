@@ -111,7 +111,7 @@ For convenience, all necessary container images and builders can be run with a f
 For a complete rebuild of both the frontend and backend, as well as to re-deploy the web server/proxy and backend:
 
 ```bash
-podman compose --profile --podman-build-args "--network host" build build   # builds frontend builder and backend base image
+podman compose --profile build --podman-build-args "--network host" build   # builds frontend builder and backend base image
 podman compose --profile web-build run frontend-build                       # runs frontend builder to create dist/ directory and assets
 podman compose up -d --build                                                # builds backend image and runs wispr-web and wispr-backend containers
 ```
@@ -120,7 +120,7 @@ podman compose up -d --build                                                # bu
 
 To rebuild only the frontend, re-build and re-run the builder, then restart the web server:
 ```bash
-podman compose --profile --podman-build-args "--network host" web-build build   # builds the frontend builder image
+podman compose --profile web-build --podman-build-args "--network host" build   # builds the frontend builder image
 podman compose --profile web-build run frontend-build                           # runs the frontend builder image to create dist/
 podman compose restart web                                                      # restarts the web server to use new frontend files
 # # alternatively, if web server/proxy container needs to be recreated, due to e.g. change in the image:
@@ -129,7 +129,7 @@ podman compose restart web                                                      
 
 To rebuild only the backend, (optionally) re-build the base image and re-build the backend image, then re-deploy the backend:
 ```bash
-podman compose --profile --podman-build-args "--network host" backend-build build   # builds backend base image
+podman compose --profile backend-build --podman-build-args "--network host" build   # builds backend base image
 # ^^ Optional, only if base image does not need rebuild (i.e. no requirements changes)
 podman compose up -d --build backend                                                # builds backend image and runs backend container
 ```
