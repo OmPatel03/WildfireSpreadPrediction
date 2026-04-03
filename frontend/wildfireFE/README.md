@@ -23,3 +23,27 @@ If you are developing a production application, we recommend using TypeScript wi
 2. run `npm install`
 3. create `frontend/wildfireFE/.env` and declare the `MAPBOX` token
 4. run `npm run dev`
+
+## Lighthouse Performance Audits
+
+This frontend includes Lighthouse-based performance tests for the initial page load.
+
+### Available commands
+- `npm run perf:lighthouse:local`
+  - Builds the app, starts a local production preview on `http://127.0.0.1:4173`, and runs Lighthouse against it.
+- `npm run perf:lighthouse:live`
+  - Runs Lighthouse against the deployed site at `https://wisprlabs.com`.
+- `npm run perf:lighthouse`
+  - Runs both the local and live audits sequentially.
+
+### Report output
+
+Generated reports are written to `frontend/wildfireFE/lighthouse-reports/` as:
+- one HTML report
+- one JSON report
+
+The current setup uses Lighthouse's desktop profile and audits only the `performance` category for the root page load.
+
+### Browser requirement
+
+Lighthouse needs a locally installed Chrome or Chromium browser. If it is not auto-detected, set `CHROME_PATH` before running the audit commands.
