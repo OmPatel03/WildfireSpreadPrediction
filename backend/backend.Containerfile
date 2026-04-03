@@ -4,6 +4,9 @@ FROM wispr-backend-base
 WORKDIR /app
 COPY backend ./backend
 
+# copy good predictions
+COPY good_fire_predictions_2021.csv ./good_fire_predictions_2021.csv
+
 # copy wsts source
 ARG WSTS_ROOT_HOST=src/wsts
 COPY ${WSTS_ROOT_HOST} ./wsts
