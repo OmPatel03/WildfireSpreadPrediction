@@ -24,6 +24,8 @@ If you are developing a production application, we recommend using TypeScript wi
 3. create `frontend/wildfireFE/.env` and declare the `MAPBOX` token
 4. run `npm run dev`
 
+Frontend builds and tests require Node `^20.19.0 || ^22.12.0 || >=24.0.0`.
+
 ## Lighthouse Performance Audits
 
 This frontend includes Lighthouse-based performance tests for the initial page load.
