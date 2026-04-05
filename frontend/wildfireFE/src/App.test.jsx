@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App.jsx";
 
+const ABOUT_TRANSITION_MS = 220;
+
 vi.mock("./components/MapView", () => ({
   default: () => <div>Map View</div>,
 }));
@@ -95,11 +97,73 @@ describe("App landing flow", () => {
       screen.getByRole("heading", { name: "WISPR" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Enter WISPR" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "About WISPR" })).toBeInTheDocument();
     expect(screen.queryByText("Top Controls")).not.toBeInTheDocument();
   });
 
-  it("enters the app and persists the session flag", () => {
+  it("opens the about modal without starting app entry", () => {
     render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "About WISPR" }));
+
+    expect(
+      screen.getByRole("dialog", { name: "About WISPR" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Predict spread")).toBeInTheDocument();
+    expect(
+      screen.getByText("From wildfire records to interactive prediction layers"),
+    ).toBeInTheDocument();
+    expect(window.sessionStorage.getItem("wispr:entered-app")).toBeNull();
+    expect(screen.getByLabelText("WISPR landing page")).not.toHaveClass("landing-screen-exit-to-app");
+  });
+
+  it("closes the about modal with the close button, backdrop click, and Escape", () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "About WISPR" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close About WISPR" }));
+
+    act(() => {
+      vi.advanceTimersByTime(ABOUT_TRANSITION_MS);
+    });
+
+    expect(
+      screen.queryByRole("dialog", { name: "About WISPR" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "About WISPR" }));
+    fireEvent.click(screen.getByTestId("landing-about-backdrop"));
+
+    act(() => {
+      vi.advanceTimersByTime(ABOUT_TRANSITION_MS);
+    });
+
+    expect(
+      screen.queryByRole("dialog", { name: "About WISPR" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "About WISPR" }));
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    act(() => {
+      vi.advanceTimersByTime(ABOUT_TRANSITION_MS);
+    });
+
+    expect(
+      screen.queryByRole("dialog", { name: "About WISPR" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "About WISPR" })).toHaveFocus();
+  });
+
+  it("enters the app after the about modal is closed and persists the session flag", () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "About WISPR" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close About WISPR" }));
+
+    act(() => {
+      vi.advanceTimersByTime(ABOUT_TRANSITION_MS);
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Enter WISPR" }));
 

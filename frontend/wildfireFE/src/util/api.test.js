@@ -148,7 +148,11 @@ describe("api utilities", () => {
     });
 
     const url = new URL(String(fetch.mock.calls[0][0]));
-    expect(url.pathname).toBe("/fires/fire-7/layers");
+    const expectedPathname = new URL(
+      `${API_BASE_URL}/fires/fire-7/layers`,
+      "http://example.com",
+    ).pathname;
+    expect(url.pathname).toBe(expectedPathname);
     expect(url.searchParams.get("year")).toBe("2024");
     expect(url.searchParams.get("sampleIndex")).toBe("3");
     expect(url.searchParams.get("threshold")).toBe("0.7");
