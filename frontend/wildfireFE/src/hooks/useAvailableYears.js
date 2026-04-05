@@ -5,6 +5,7 @@ import { fetchYears } from "../util/api.js";
 export default function useAvailableYears({
   defaultYear,
   fallbackYearOptions = [defaultYear],
+  enabled = true,
 }) {
   const [yearOptions, setYearOptions] = useState(fallbackYearOptions);
   const [resolvedInitialYear, setResolvedInitialYear] = useState(defaultYear);
@@ -12,6 +13,11 @@ export default function useAvailableYears({
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return undefined;
+    }
+
     let ignore = false;
     const controller = new AbortController();
 
@@ -46,7 +52,7 @@ export default function useAvailableYears({
       ignore = true;
       controller.abort();
     };
-  }, [defaultYear]);
+  }, [defaultYear, enabled]);
 
   return {
     yearOptions,

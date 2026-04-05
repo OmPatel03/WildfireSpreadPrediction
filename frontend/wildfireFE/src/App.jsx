@@ -15,6 +15,7 @@ import useDebouncedValue from "./hooks/useDebouncedValue";
 import useFireLayers from "./hooks/useFireLayers";
 import useFireTimeline from "./hooks/useFireTimeline";
 import useMapCamera from "./hooks/useMapCamera";
+import { annotateCatalogWithLocations } from "./util/geocode.js";
 
 const DEFAULT_YEAR = 2021;
 const DEFAULT_THRESHOLD = 0.9;
@@ -76,6 +77,30 @@ function joinClasses(...classes) {
   return classes.filter(Boolean).join(" ");
 }
 
+function buildLocationLookupKey(fire) {
+  if (!fire?.fireId) {
+    return null;
+  }
+
+  return `${fire.year ?? "unknown"}:${fire.fireId}`;
+}
+
+function mergeCatalogLocationNames(catalog, locationNamesByKey) {
+  return catalog.map((fire) => {
+    const lookupKey = buildLocationLookupKey(fire);
+    const locationName = lookupKey ? locationNamesByKey[lookupKey] : null;
+
+    if (!locationName || fire.locationName === locationName) {
+      return fire;
+    }
+
+    return {
+      ...fire,
+      locationName,
+    };
+  });
+}
+
 function buildOverviewGeojson(fires) {
   return {
     type: "FeatureCollection",
@@ -126,6 +151,8 @@ export default function App() {
     DEFAULT_LAYER_VISIBILITY,
   );
   const [selectedFireLoadingId, setSelectedFireLoadingId] = useState(null);
+  const [locationNamesByKey, setLocationNamesByKey] = useState({});
+  const appDataEnabled = screen === "app";
 
   const {
     yearOptions,
@@ -133,16 +160,21 @@ export default function App() {
   } = useAvailableYears({
     defaultYear: DEFAULT_YEAR,
     fallbackYearOptions: FALLBACK_YEAR_OPTIONS,
+    enabled: appDataEnabled,
   });
   const {
-    catalog,
+    catalog: rawCatalog,
     loading: catalogLoading,
     error: catalogError,
   } = useCatalogData({
     year,
     catalogLimit,
-    mapboxToken: MAPBOX_TOKEN,
+    enabled: appDataEnabled,
   });
+  const catalog = useMemo(
+    () => mergeCatalogLocationNames(rawCatalog, locationNamesByKey),
+    [locationNamesByKey, rawCatalog],
+  );
 
   const debouncedThreshold = useDebouncedValue(threshold, 350);
   const debouncedSampleIndex = useDebouncedValue(sampleIndex, 200);
@@ -217,6 +249,33 @@ export default function App() {
     () => catalog.find((fire) => fire.fireId === selectedId) ?? null,
     [catalog, selectedId],
   );
+  const geocodeTargets = useMemo(() => {
+    const pendingTargets = [];
+    const seenKeys = new Set();
+
+    const addTarget = (fire) => {
+      const lookupKey = buildLocationLookupKey(fire);
+
+      if (
+        !fire
+        || !lookupKey
+        || seenKeys.has(lookupKey)
+        || fire.locationName
+        || !Number.isFinite(fire.latitude)
+        || !Number.isFinite(fire.longitude)
+      ) {
+        return;
+      }
+
+      seenKeys.add(lookupKey);
+      pendingTargets.push(fire);
+    };
+
+    visibleCatalog.forEach(addTarget);
+    addTarget(selectedFire);
+
+    return pendingTargets;
+  }, [selectedFire, visibleCatalog]);
   const selectedFireYear = selectedFire?.year ?? null;
   const mapInitialViewState = useMemo(
     () =>
@@ -234,6 +293,57 @@ export default function App() {
     () => buildOverviewGeojson(filteredCatalog),
     [filteredCatalog],
   );
+
+  useEffect(() => {
+    if (!appDataEnabled || !MAPBOX_TOKEN || geocodeTargets.length === 0) {
+      return undefined;
+    }
+
+    let ignore = false;
+    const controller = new AbortController();
+
+    async function loadLocationNames() {
+      try {
+        const enrichedTargets = await annotateCatalogWithLocations(
+          geocodeTargets,
+          MAPBOX_TOKEN,
+          controller.signal,
+        );
+
+        if (ignore) {
+          return;
+        }
+
+        setLocationNamesByKey((current) => {
+          let changed = false;
+          const next = { ...current };
+
+          enrichedTargets.forEach((fire) => {
+            const lookupKey = buildLocationLookupKey(fire);
+            if (!lookupKey || !fire.locationName || next[lookupKey] === fire.locationName) {
+              return;
+            }
+
+            next[lookupKey] = fire.locationName;
+            changed = true;
+          });
+
+          return changed ? next : current;
+        });
+      } catch (nextError) {
+        if (nextError?.name !== "AbortError") {
+          console.warn("Location lookup failed:", nextError);
+        }
+      }
+    }
+
+    loadLocationNames();
+
+    return () => {
+      ignore = true;
+      controller.abort();
+    };
+  }, [appDataEnabled, geocodeTargets]);
 
   const {
     timeline,

@@ -91,4 +91,18 @@ describe("useAvailableYears", () => {
     expect(harness.getLatest().resolvedInitialYear).toBe(2021);
     expect(harness.getLatest().error).toBeNull();
   });
+
+  it("stays idle when disabled", () => {
+    const harness = renderUseAvailableYears({
+      defaultYear: 2021,
+      fallbackYearOptions: [2021, 2020],
+      enabled: false,
+    });
+
+    expect(fetchYears).not.toHaveBeenCalled();
+    expect(harness.getLatest().yearOptions).toEqual([2021, 2020]);
+    expect(harness.getLatest().resolvedInitialYear).toBe(2021);
+    expect(harness.getLatest().loading).toBe(false);
+    expect(harness.getLatest().error).toBeNull();
+  });
 });

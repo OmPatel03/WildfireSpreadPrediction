@@ -4,20 +4,23 @@ import {
   fetchGoodPredictions,
   fetchOverview,
 } from "../util/api.js";
-import { annotateCatalogWithLocations } from "../util/geocode.js";
 
 export default function useCatalogData({
   year,
   catalogLimit,
-  mapboxToken,
+  enabled = true,
 }) {
   const [catalog, setCatalog] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return undefined;
+    }
+
     let ignore = false;
-    const geocodeController = new AbortController();
     const overviewController = new AbortController();
 
     async function loadOverview() {
@@ -64,22 +67,6 @@ export default function useCatalogData({
         if (!ignore) {
           setCatalog(filteredRows);
         }
-
-        try {
-          const enriched = await annotateCatalogWithLocations(
-            filteredRows,
-            mapboxToken,
-            geocodeController.signal,
-          );
-
-          if (!ignore) {
-            setCatalog(enriched);
-          }
-        } catch (nextError) {
-          if (nextError?.name !== "AbortError") {
-            console.warn("Location lookup failed:", nextError);
-          }
-        }
       } catch (nextError) {
         if (!ignore && nextError?.name !== "AbortError") {
           setError(nextError.message ?? "Unable to load overview");
@@ -96,9 +83,8 @@ export default function useCatalogData({
     return () => {
       ignore = true;
       overviewController.abort();
-      geocodeController.abort();
     };
-  }, [catalogLimit, mapboxToken, year]);
+  }, [catalogLimit, enabled, year]);
 
   return {
     catalog,
