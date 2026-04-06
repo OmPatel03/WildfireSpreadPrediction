@@ -1,0 +1,8 @@
+Attendees:
+Everyone but Soutrik and Tom
+Missing member will be filled in after the meeting.
+
+Talked about feedback after the proof of concept
+Set clearer goals for the next stage
+Talked about improving results and the frontend
+Assigned winter break tasks

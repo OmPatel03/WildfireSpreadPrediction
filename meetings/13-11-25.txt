@@ -1,0 +1,9 @@
+Attendees:
+Everyone but Tom and Om
+Missing members will be filled in after the meeting.
+
+Started focusing on the proof of concept video and presentation for Nov 20
+Talked about which parts are stable enough to show
+Planned slides and the main story for the demo
+Discussed needed screen recordings and model examples
+Need to practice and polish it before next week

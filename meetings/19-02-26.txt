@@ -1,0 +1,7 @@
+Attendees:
+Everyone
+
+Talked about UI cleanup and easier demos
+Worked on bug fixes and small usability changes
+Discussed content for the poster and final video
+Assigned polish tasks for both model and frontend work

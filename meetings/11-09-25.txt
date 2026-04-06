@@ -1,0 +1,7 @@
+Attendees:
+Everyone
+
+Talked about the team/project form and project direction
+Narrowed it down to wildfire prediction with a simple interface
+Worked on team logistics and task split
+Need to finalize the project choice before next week

@@ -1,0 +1,7 @@
+Attendees:
+Everyone
+
+Talked more about the dataset and available features
+Discussed model input and output for wildfire spread
+Started splitting backend and frontend responsibilities
+Need to keep testing the data and pick a first baseline

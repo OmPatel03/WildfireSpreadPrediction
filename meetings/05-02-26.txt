@@ -1,0 +1,8 @@
+Attendees:
+Everyone
+
+Talked about moving into implementation and integration
+Discussed connecting backend model outputs to the frontend
+Worked on map interactions, data flow, and demo cleanup
+Talked about bugs and what to prioritize first
+Assigned tasks for model tuning and UI improvements

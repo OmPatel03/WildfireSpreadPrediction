@@ -1,0 +1,6 @@
+Attendees:
+Everyone
+
+Started planning the design doc and V and V assignment
+Discussed architecture and testing details to document
+Assigned drafting tasks for the January submissions

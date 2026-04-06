@@ -1,0 +1,8 @@
+Attendees:
+Everyone but Kevin and Umar
+Missing member will be filled in after the meeting.
+
+Talked about early experiments and training setup
+Discussed a first backend to frontend workflow
+Worked on what is enough for a proof of concept demo
+Assigned tasks for model progress and presentation planning

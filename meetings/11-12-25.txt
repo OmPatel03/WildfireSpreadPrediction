@@ -1,0 +1,8 @@
+Attendees:
+Everyone but Soutrik and Neel
+Missing members will be filled in after the meeting.
+
+Talked about model progress and work during the break
+Discussed map ideas and demo improvements
+Reviewed task split for the next few weeks
+Need to come back ready for design and validation work
