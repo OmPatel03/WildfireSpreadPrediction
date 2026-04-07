@@ -1,5 +1,7 @@
 # WildfireSpreadPrediction
 
+Live site: https://app.wisprlabs.com/
+
 ## Backend API (FastAPI + GraphQL)
 
 The backend lives under `backend/src` and exposes both REST and GraphQL interfaces for the wildfire spread model checkpoint in `backend/resources/model.ckpt`. It expects the pre-generated HDF5 cubes under `../HDF5/<year>` (relative to the repository root), which matches the layout you shared.
